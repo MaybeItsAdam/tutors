@@ -1,0 +1,22 @@
+node_modules
+dist
+.env
+.dev.vars
+*.local
+.wrangler
+.npm-cache
+
+# Python backend
+backend/__pycache__
+backend/.venv
+backend/*.pyc
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
