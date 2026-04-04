@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
 	DefaultSizeStyle,
 	DefaultStylePanel,
@@ -8,10 +8,10 @@ import {
 	TLComponents,
 	Tldraw,
 	TldrawOverlays,
-	TldrawUiMenuItem,
+	TldrawUiMenuToolItem,
 	TldrawUiToastsProvider,
 	TLUiOverrides,
-	useTools,
+	Editor,
 } from 'tldraw'
 import { TldrawAgentApp } from './agent/TldrawAgentApp'
 import {
@@ -34,14 +34,91 @@ import { GraphTool } from './tools/GraphTool'
 import { EquationShapeUtil } from './shapes/equation/EquationShapeUtil'
 import { GraphShapeUtil } from './shapes/graph/GraphShapeUtil'
 import { PdfDocumentShapeUtil } from './shapes/pdf/PdfDocumentShapeUtil'
+import {
+	buildPdfPageAssetName,
+	PDF_PLACEMENT_CASCADE_OFFSET,
+	PDF_PLACEMENT_VIEWPORT_TOP_OFFSET,
+	PDF_SHAPE_DEFAULT_H,
+	PDF_SHAPE_DEFAULT_W,
+} from './shapes/pdf/PdfConstants'
 import { AssetRecordType, TLAsset, TLAssetId } from 'tldraw'
+import { PdfProcessor } from './utils/PdfProcessor'
 
 // Customize tldraw's styles to play to the agent's strengths
 DefaultSizeStyle.setDefaultValue('s')
 
+async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y: number }) {
+	if (file.type !== 'application/pdf') return
+
+	const pages = await PdfProcessor.processFile(file)
+	if (!pages.length) return
+
+	const assetIds: TLAssetId[] = []
+	const assetsToCreate: TLAsset[] = []
+
+	for (const page of pages) {
+		const assetId = AssetRecordType.createId()
+		assetIds.push(assetId)
+		assetsToCreate.push({
+			id: assetId,
+			type: 'image',
+			typeName: 'asset' as const,
+			meta: {},
+			props: {
+				w: page.width,
+				h: page.height,
+				name: buildPdfPageAssetName(file.name, page.pageNumber),
+				isAnimated: false,
+				mimeType: 'image/png',
+				src: page.dataUrl,
+			},
+		})
+	}
+
+	editor.createAssets(assetsToCreate)
+	editor.createShape({
+		type: 'pdf',
+		x: point.x,
+		y: point.y,
+		props: {
+			w: PDF_SHAPE_DEFAULT_W,
+			h: PDF_SHAPE_DEFAULT_H,
+			assetIds,
+			currentPage: 0,
+		},
+	})
+}
+
 // Custom tools for picking context items
 const tools = [TargetShapeTool, TargetAreaTool, MathTool, GraphTool]
 const shapeUtils = [EquationShapeUtil, GraphShapeUtil, PdfDocumentShapeUtil]
+const PINNED_CUSTOM_TOOLS_STORAGE_KEY = 'tutors.pinned-toolbar-tools'
+const PINNABLE_CUSTOM_TOOL_IDS = ['math', 'graph', 'target-area', 'target-shape'] as const
+const DEFAULT_PINNED_CUSTOM_TOOL_IDS: string[] = ['math']
+
+function getPinnedCustomToolIds(): string[] {
+	if (typeof window === 'undefined') return DEFAULT_PINNED_CUSTOM_TOOL_IDS
+
+	const parse = (raw: string | null): string[] | null => {
+		if (!raw) return null
+		const parsed = raw
+			.split(',')
+			.map((id) => id.trim())
+			.filter((id): id is (typeof PINNABLE_CUSTOM_TOOL_IDS)[number] =>
+				(PINNABLE_CUSTOM_TOOL_IDS as readonly string[]).includes(id)
+			)
+		return parsed.length ? parsed : null
+	}
+
+	const fromQuery = parse(new URLSearchParams(window.location.search).get('pinnedTools'))
+	if (fromQuery) return fromQuery
+
+	const fromStorage = parse(window.localStorage.getItem(PINNED_CUSTOM_TOOLS_STORAGE_KEY))
+	if (fromStorage) return fromStorage
+
+	return DEFAULT_PINNED_CUSTOM_TOOL_IDS
+}
+
 const overrides: TLUiOverrides = {
 	tools: (editor, tools) => {
 		return {
@@ -82,18 +159,31 @@ const overrides: TLUiOverrides = {
 					editor.setCurrentTool('graph')
 				},
 			},
+			'pdf-upload': {
+				id: 'pdf-upload',
+				label: 'Upload PDF',
+				icon: 'tool-media',
+				onSelect() {
+					const input = document.getElementById('pdf-upload-input') as HTMLInputElement | null
+					input?.click()
+					editor.setCurrentTool('select')
+				},
+			},
 		}
 	},
 }
 
-// Custom toolbar with Math and Graph buttons appended
-function CustomToolbar() {
-	const tools = useTools()
+// Custom toolbar with user-configurable custom tool pins before default items.
+// Set localStorage["tutors.pinned-toolbar-tools"] = "math,graph,target-area,target-shape"
+// or use ?pinnedTools=math,target-area in the URL.
+function CustomToolbar({ pinnedToolIds }: { pinnedToolIds: string[] }) {
 	return (
 		<DefaultToolbar>
+			{pinnedToolIds.map((toolId) => (
+				<TldrawUiMenuToolItem key={toolId} toolId={toolId} />
+			))}
 			<DefaultToolbarContent />
-			<TldrawUiMenuItem {...tools['math']} />
-			<TldrawUiMenuItem {...tools['graph']} />
+			<TldrawUiMenuToolItem toolId="pdf-upload" />
 		</DefaultToolbar>
 	)
 }
@@ -119,8 +209,36 @@ function OffsetStylePanel() {
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
 	const [showCheatSheet, setShowCheatSheet] = useState(false)
-	const [uiView, setUiView] = useState<'landing' | 'timeline' | 'editor'>('landing')
+	const [uiView, setUiView] = useState<'landing' | 'timeline' | 'editor'>('editor')
 	const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
+	const editorRef = useRef<Editor | null>(null)
+
+	const handlePdfInputChange = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
+		const editor = editorRef.current
+		const files = e.target.files
+		if (!editor || !files?.length) return
+
+		const viewport = editor.getViewportPageBounds()
+		const origin = {
+			x: viewport.x + viewport.w / 2 - PDF_SHAPE_DEFAULT_W / 2,
+			y: viewport.y + PDF_PLACEMENT_VIEWPORT_TOP_OFFSET,
+		}
+
+		for (let i = 0; i < files.length; i++) {
+			const file = files[i]
+			try {
+				await addPdfToCanvas(editor, file, {
+					x: origin.x + i * PDF_PLACEMENT_CASCADE_OFFSET,
+					y: origin.y + i * PDF_PLACEMENT_CASCADE_OFFSET,
+				})
+			} catch (err) {
+				console.error('Failed to process PDF upload', err)
+			}
+		}
+
+		e.target.value = ''
+	}, [])
+	const pinnedToolIds = useMemo(() => getPinnedCustomToolIds(), [])
 
 	const handleUnmount = useCallback(() => {
 		setApp(null)
@@ -165,7 +283,7 @@ function App() {
 	// These use TldrawAgentAppContextProvider to access the app/agent
 	const components: TLComponents = useMemo(() => {
 		return {
-			Toolbar: CustomToolbar,
+			Toolbar: () => <CustomToolbar pinnedToolIds={pinnedToolIds} />,
 			StylePanel: OffsetStylePanel,
 			HelperButtons: () =>
 				app && (
@@ -186,68 +304,45 @@ function App() {
 				</>
 			),
 		}
-	}, [app])
+	}, [app, pinnedToolIds])
 
 	return (
 		<TldrawUiToastsProvider>
+			<input
+				id="pdf-upload-input"
+				type="file"
+				accept="application/pdf"
+				multiple
+				style={{ display: 'none' }}
+				onChange={handlePdfInputChange}
+			/>
 			<div className="tldraw-agent-container">
 				<div className="tldraw-canvas">
 					<Tldraw
 						persistenceKey="tldraw-agent-demo"
 						onMount={(editor) => {
+							editorRef.current = editor
 							// @ts-expect-error - Attach editor to window for debugging and testing
 							window.editor = editor
 
 							const handleDrop = async (e: DragEvent) => {
 								if (!e.dataTransfer?.files.length) return
-								const file = e.dataTransfer.files[0]
-								if (file.type === 'application/pdf') {
-									e.preventDefault()
-									e.stopPropagation()
-									
-									const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
-									
+								const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf')
+								if (!files.length) return
+
+								e.preventDefault()
+								e.stopPropagation()
+
+								const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
+
+								for (let i = 0; i < files.length; i++) {
 									try {
-										const { PdfProcessor } = await import('./utils/PdfProcessor')
-										const pages = await PdfProcessor.processFile(file)
-										
-										const assetIds: TLAssetId[] = []
-										const assetsToCreate: TLAsset[] = []
-										
-										for (const page of pages) {
-											const assetId = AssetRecordType.createId()
-											assetIds.push(assetId)
-											assetsToCreate.push({
-												id: assetId,
-												type: 'image',
-												typeName: 'asset' as const,
-												meta: {},
-												props: {
-													w: page.width,
-													h: page.height,
-													name: file.name + ' Page ' + page.pageNumber,
-													isAnimated: false,
-													mimeType: 'image/png',
-													src: page.dataUrl,
-												}
-											})
-										}
-										
-										editor.createAssets(assetsToCreate)
-										
-										editor.createShape({
-											type: 'pdf',
-											x: point.x,
-											y: point.y,
-											props: {
-												w: 400,
-												h: 500,
-												assetIds,
-												currentPage: 0
-											}
+										await addPdfToCanvas(editor, files[i], {
+											x: point.x + i * PDF_PLACEMENT_CASCADE_OFFSET,
+											y: point.y + i * PDF_PLACEMENT_CASCADE_OFFSET,
 										})
-									} catch(err) {
-										console.error("Failed to process PDF", err)
+									} catch (err) {
+										console.error('Failed to process PDF', err)
 									}
 								}
 							}
