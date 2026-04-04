@@ -80,7 +80,7 @@ function findIntersections(
 	xMin: number,
 	xMax: number
 ) {
-	const intersections: { x: number; y: number; colorA: string; colorB: string }[] = []
+	const intersections: { x: number; y: number; colorA: string; colorB: string; score: number }[] = []
 	const steps = SAMPLES
 	const dx = (xMax - xMin) / steps
 	// Keep root and de-dup tolerances proportional to sample spacing to reduce flicker
@@ -94,6 +94,74 @@ function findIntersections(
 		const denom = diffB - diffA
 		if (Math.abs(denom) < 1e-12) return (xa + xb) / 2
 		return xa - (diffA * (xb - xa)) / denom
+	}
+
+	const diffAt = (exprA: string, exprB: string, x: number) =>
+		evaluateExpression(exprA, x) - evaluateExpression(exprB, x)
+
+	const refineRoot = (exprA: string, exprB: string, xa: number, xb: number, guess: number, dA: number, dB: number) => {
+		let x = Math.min(xb, Math.max(xa, guess))
+		let bestX = x
+		let bestScore = Number.POSITIVE_INFINITY
+		const h = Math.max(1e-6, dx * 0.1)
+
+		for (let iter = 0; iter < 8; iter++) {
+			let d: number
+			try {
+				d = diffAt(exprA, exprB, x)
+			} catch {
+				break
+			}
+			const absD = Math.abs(d)
+			if (absD < bestScore) {
+				bestScore = absD
+				bestX = x
+			}
+			if (absD < 1e-10) return { x, score: absD }
+			let dLeft: number
+			let dRight: number
+			try {
+				dLeft = diffAt(exprA, exprB, x - h)
+				dRight = diffAt(exprA, exprB, x + h)
+			} catch {
+				break
+			}
+			const derivative = (dRight - dLeft) / (2 * h)
+			if (!isFinite(derivative) || Math.abs(derivative) < 1e-12) break
+			const nextX = x - d / derivative
+			x = Math.min(xb, Math.max(xa, nextX))
+		}
+
+		if (dA * dB <= 0) {
+			let lo = xa
+			let hi = xb
+			let dLo = dA
+			let dHi = dB
+			for (let iter = 0; iter < 14; iter++) {
+				const mid = lo + (hi - lo) * 0.5
+				let dMid: number
+				try {
+					dMid = diffAt(exprA, exprB, mid)
+				} catch {
+					break
+				}
+				const absMid = Math.abs(dMid)
+				if (absMid < bestScore) {
+					bestScore = absMid
+					bestX = mid
+				}
+				if (absMid < 1e-10) return { x: mid, score: absMid }
+				if (dLo * dMid <= 0) {
+					hi = mid
+					dHi = dMid
+				} else {
+					lo = mid
+					dLo = dMid
+				}
+			}
+		}
+
+		return { x: bestX, score: bestScore }
 	}
 
 	for (let i = 0; i < functionsToPlot.length; i++) {
@@ -116,7 +184,8 @@ function findIntersections(
 
 				if (Math.abs(d0) > threshold && Math.abs(d1) > threshold && d0 * d1 > 0) continue
 
-				const xRoot = rootBetween(d0, d1, x0, x1)
+				const xInitial = rootBetween(d0, d1, x0, x1)
+				const { x: xRoot, score } = refineRoot(a.expr, b.expr, x0, x1, xInitial, d0, d1)
 				let yRoot: number
 				try {
 					yRoot = evaluateExpression(a.expr, xRoot)
@@ -125,21 +194,26 @@ function findIntersections(
 					continue
 				}
 
-				const duplicate = intersections.some(
+				const duplicateIndex = intersections.findIndex(
 					(point) =>
 						Math.abs(point.x - xRoot) < dx * INTERSECTION_DUPLICATE_X_FACTOR &&
 						Math.abs(point.y - yRoot) < threshold * INTERSECTION_DUPLICATE_Y_FACTOR
 				)
-				if (duplicate) continue
+				if (duplicateIndex >= 0) {
+					if (score < intersections[duplicateIndex].score) {
+						intersections[duplicateIndex] = { x: xRoot, y: yRoot, colorA: a.color, colorB: b.color, score }
+					}
+					continue
+				}
 
-				intersections.push({ x: xRoot, y: yRoot, colorA: a.color, colorB: b.color })
+				intersections.push({ x: xRoot, y: yRoot, colorA: a.color, colorB: b.color, score })
 			}
 		}
 	}
 
 	// Final consolidation pass for repeated roots / tangent touches that can still emit
 	// multiple nearby candidates across adjacent sample windows.
-	const merged: { x: number; y: number; colorA: string; colorB: string }[] = []
+	const merged: { x: number; y: number; colorA: string; colorB: string; score: number }[] = []
 	for (const point of intersections.sort((p1, p2) => p1.x - p2.x)) {
 		const existing = merged.find(
 			(candidate) =>
@@ -150,10 +224,16 @@ function findIntersections(
 			merged.push(point)
 			continue
 		}
-		// Keep the earliest candidate to avoid cumulative centroid drift.
+		if (point.score < existing.score) {
+			existing.x = point.x
+			existing.y = point.y
+			existing.colorA = point.colorA
+			existing.colorB = point.colorB
+			existing.score = point.score
+		}
 	}
 
-	return merged
+	return merged.map(({ x, y, colorA, colorB }) => ({ x, y, colorA, colorB }))
 }
 
 function areSlidersEqual(a: GraphSlider[], b: GraphSlider[]) {

@@ -7,7 +7,7 @@ export class MathTool extends StateNode {
 		return [MathIdle]
 	}
 
-	override isLockable = false
+	override isLockable = true
 
 	override onEnter() {
 		this.editor.setCursor({ type: 'cross', rotation: 0 })
