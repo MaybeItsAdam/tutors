@@ -130,12 +130,12 @@ function App() {
 		setUiView((prev) => (prev === 'editor' ? 'timeline' : 'landing'))
 	}, [])
 
-	const currentWorkspaceForTimeline = app
-		? app.workspaces
-				.getWorkspaces()
-				.find((w) => w.id === (selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId())) ??
-		  app.workspaces.getCurrentWorkspace()
-		: null
+	const currentWorkspaceForTimeline = useMemo(() => {
+		if (!app) return null
+		const workspaces = app.workspaces.getWorkspaces()
+		const targetId = selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId()
+		return workspaces.find((w) => w.id === targetId) ?? app.workspaces.getCurrentWorkspace()
+	}, [app, selectedWorkspaceId])
 
 	// Global hotkey: h or ? toggles the Math cheat sheet
 	useEffect(() => {

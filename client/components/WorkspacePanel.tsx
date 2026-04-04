@@ -5,10 +5,7 @@ import {
 	WorkspaceBranch,
 	WorkspaceSnapshot,
 } from '../agent/managers/WorkspaceManager'
-
-function formatTime(ts: number) {
-	return new Date(ts).toLocaleString()
-}
+import { formatWorkspaceTime } from '../utils/workspaceFormat'
 
 export function WorkspacePanel({ currentWorkspace }: { currentWorkspace: Workspace | null }) {
 	const app = useTldrawAgentApp()
@@ -195,7 +192,7 @@ function BranchHistory({
 				<div>
 					<strong>{branch.name}</strong>
 					<div className="workspace-meta">
-						{isCurrent ? 'current' : 'branch'} · updated {formatTime(branch.updatedAt)}
+						{isCurrent ? 'current' : 'branch'} · updated {formatWorkspaceTime(branch.updatedAt)}
 					</div>
 				</div>
 				<div className="workspace-branch-actions">
@@ -243,7 +240,7 @@ function SnapshotRow({
 					{snapshot.name} {snapshot.isAuto ? '(auto)' : ''}
 				</div>
 				<div className="workspace-meta">
-					{formatTime(snapshot.createdAt)}
+					{formatWorkspaceTime(snapshot.createdAt)}
 					{snapshot.parentSnapshotId ? ' · forked' : ''}
 					{snapshot.mergedFromBranchId ? ' · merge commit' : ''}
 				</div>

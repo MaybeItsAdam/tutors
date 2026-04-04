@@ -79,7 +79,8 @@ export const TldrawAgentAppProvider = memo(function TldrawAgentAppProvider({
 	useEffect(() => {
 		const instance = new TldrawAgentApp(editor, { onError: handleError })
 
-		// Load persisted workspace state first.
+		// Load persisted workspace state first; workspace snapshots include app/agent state
+		// restoration, so this replaces direct persistence.loadState() at startup.
 		instance.workspaces.loadState()
 
 		// Ensure at least one agent exists (safety for legacy/empty state)
