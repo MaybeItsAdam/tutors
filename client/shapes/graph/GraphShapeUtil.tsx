@@ -331,11 +331,7 @@ function GraphRenderer({
 		})
 	}, [editor, expectedSliders, shape.id, slidersDiffer])
 
-	const sliderSignature = useMemo(
-		() => sliders.map((s) => `${s.name}:${s.value}:${s.min}:${s.max}:${s.step}`).join('|'),
-		[sliders]
-	)
-	const evaluateExpression = useMemo(() => createExpressionEvaluator(sliders), [sliderSignature])
+	const evaluateExpression = useMemo(() => createExpressionEvaluator(sliders), [sliders])
 	const intersections = findIntersections(functionsToPlot, sliders, xMin, xMax)
 
 	const handleInputKeyDown = (e: React.KeyboardEvent) => {
