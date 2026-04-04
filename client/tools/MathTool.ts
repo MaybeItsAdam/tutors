@@ -16,18 +16,6 @@ export class MathTool extends StateNode {
 	override onExit() {
 		this.editor.setCursor({ type: 'default', rotation: 0 })
 	}
-
-	override onInterrupt() {
-		this.complete()
-	}
-
-	override onCancel() {
-		this.complete()
-	}
-
-	private complete() {
-		this.parent.transition('select', {})
-	}
 }
 
 class MathIdle extends StateNode {

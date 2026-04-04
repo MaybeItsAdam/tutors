@@ -198,7 +198,7 @@ function MathLiveEditor({ shape, editor }: { shape: IEquationShape; editor: any 
 				// Let height size naturally — ResizeObserver syncs back to shape
 				minHeight: '60px',
 				fontSize: `${shape.props.fontSize}px`,
-				backgroundColor: 'rgba(15, 17, 23, 0.92)',
+				backgroundColor: 'var(--tl-color-panel)',
 				color: 'var(--color-text)',
 				border: '1.5px solid var(--color-primary)',
 				borderRadius: '8px',
