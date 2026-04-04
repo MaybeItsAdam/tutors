@@ -23,6 +23,8 @@ import { ChatPanelFallback } from './components/ChatPanelFallback'
 import { CustomHelperButtons } from './components/CustomHelperButtons'
 import { MathCheatSheet } from './components/MathCheatSheet'
 import { PlotGraphButton } from './components/PlotGraphButton'
+import { WorkspaceLandingPage } from './components/WorkspaceLandingPage'
+import { WorkspaceTimelineView } from './components/WorkspaceTimelineView'
 import { AgentViewportBoundsHighlights } from './components/highlights/AgentViewportBoundsHighlights'
 import { AllContextHighlights } from './components/highlights/ContextHighlights'
 import { TargetAreaTool } from './tools/TargetAreaTool'
@@ -207,6 +209,8 @@ function OffsetStylePanel() {
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
 	const [showCheatSheet, setShowCheatSheet] = useState(false)
+	const [uiView, setUiView] = useState<'landing' | 'timeline' | 'editor'>('editor')
+	const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
 	const editorRef = useRef<Editor | null>(null)
 
 	const handlePdfInputChange = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
@@ -239,6 +243,26 @@ function App() {
 	const handleUnmount = useCallback(() => {
 		setApp(null)
 	}, [])
+
+	const handleBack = useCallback(() => {
+		setUiView((prev) => (prev === 'editor' ? 'timeline' : 'landing'))
+	}, [])
+
+	const handleCreateSnapshot = useCallback(() => {
+		if (!app) return
+		const snapshot = app.workspaces.createSnapshot()
+		if (!snapshot) return
+		const workspaceId = app.workspaces.getCurrentWorkspaceId()
+		if (workspaceId) setSelectedWorkspaceId(workspaceId)
+		setUiView('timeline')
+	}, [app])
+
+	const currentWorkspaceForTimeline = useMemo(() => {
+		if (!app) return null
+		const workspaces = app.workspaces.getWorkspaces()
+		const targetId = selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId()
+		return workspaces.find((w) => w.id === targetId) ?? app.workspaces.getCurrentWorkspace()
+	}, [app, selectedWorkspaceId])
 
 	// Global hotkey: h or ? toggles the Math cheat sheet
 	useEffect(() => {
@@ -336,14 +360,63 @@ function App() {
 					>
 						<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
 					</Tldraw>
+					{app && uiView === 'editor' && (
+						<button className="workspace-back-arrow" onClick={handleBack} title="Back">
+							←
+						</button>
+					)}
+					{app && uiView === 'editor' && (
+						<button
+							className="workspace-snapshot-fab"
+							onClick={handleCreateSnapshot}
+							title="Create snapshot"
+						>
+							Snapshot
+						</button>
+					)}
 				</div>
-				<ErrorBoundary fallback={ChatPanelFallback}>
-					{app && (
+				{app && uiView === 'editor' && (
+					<ErrorBoundary fallback={ChatPanelFallback}>
 						<TldrawAgentAppContextProvider app={app}>
 							<ChatPanel />
 						</TldrawAgentAppContextProvider>
-					)}
-				</ErrorBoundary>
+					</ErrorBoundary>
+				)}
+				{app && uiView === 'landing' && (
+					<TldrawAgentAppContextProvider app={app}>
+						<WorkspaceLandingPage
+							workspaces={app.workspaces.getWorkspaces()}
+							onSelectWorkspace={(workspaceId) => {
+								app.workspaces.switchWorkspace(workspaceId)
+								setSelectedWorkspaceId(workspaceId)
+								setUiView('timeline')
+							}}
+							onCreateWorkspace={(name) => {
+								const workspace = app.workspaces.createWorkspace(name)
+								setSelectedWorkspaceId(workspace.id)
+								setUiView('timeline')
+							}}
+						/>
+					</TldrawAgentAppContextProvider>
+				)}
+				{app && uiView === 'timeline' && (
+					<TldrawAgentAppContextProvider app={app}>
+						{currentWorkspaceForTimeline && (
+							<WorkspaceTimelineView
+								workspace={currentWorkspaceForTimeline}
+								onContinueLatest={() => {
+									const didRestore = app.workspaces.restoreLatestSnapshot(
+										currentWorkspaceForTimeline.id
+									)
+									if (didRestore) {
+										setUiView('editor')
+									}
+								}}
+								onOpenEditor={() => setUiView('editor')}
+							/>
+						)}
+					</TldrawAgentAppContextProvider>
+				)}
 			</div>
 			{showCheatSheet && <MathCheatSheet onClose={() => setShowCheatSheet(false)} />}
 		</TldrawUiToastsProvider>
