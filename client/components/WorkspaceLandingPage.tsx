@@ -15,8 +15,10 @@ export function WorkspaceLandingPage({
 		<div className="workspace-screen">
 			<div className="workspace-screen-header">
 				<h1>Workspaces</h1>
+			</div>
+			<div className="workspace-landing-grid">
 				<button
-					className="workspace-screen-primary"
+					className="workspace-landing-card workspace-landing-card-add"
 					onClick={() => {
 						const usedNums = workspaces
 							.map((workspace) => {
@@ -28,10 +30,9 @@ export function WorkspaceLandingPage({
 						onCreateWorkspace(`Workspace ${n}`)
 					}}
 				>
-					New workspace
+					<div className="workspace-landing-card-title">+ Add workspace</div>
+					<div className="workspace-landing-card-meta">Create a new workspace</div>
 				</button>
-			</div>
-			<div className="workspace-landing-grid">
 				{workspaces.map((workspace) => {
 					const latest = getLatestWorkspaceSnapshot(workspace)
 					return (

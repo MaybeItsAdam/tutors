@@ -119,7 +119,7 @@ function OffsetStylePanel() {
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
 	const [showCheatSheet, setShowCheatSheet] = useState(false)
-	const [uiView, setUiView] = useState<'landing' | 'timeline' | 'editor'>('editor')
+	const [uiView, setUiView] = useState<'landing' | 'timeline' | 'editor'>('landing')
 	const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
 
 	const handleUnmount = useCallback(() => {

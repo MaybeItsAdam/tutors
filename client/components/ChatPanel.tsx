@@ -4,7 +4,6 @@ import { ChatHistory } from './chat-history/ChatHistory'
 import { ChatInput } from './ChatInput'
 import { TodoList } from './TodoList'
 import { BYOKSettings } from './byok/BYOKSettings'
-import { WorkspacePanel } from './WorkspacePanel'
 
 export function ChatPanel() {
 	const agent = useAgent()
@@ -53,7 +52,6 @@ export function ChatPanel() {
 				{currentWorkspace && <span className="workspace-current-name">{currentWorkspace.name}</span>}
 				<BYOKSettings />
 			</div>
-			<WorkspacePanel currentWorkspace={currentWorkspace} />
 			<ChatHistory agent={agent} />
 			<div className="chat-input-container">
 				<TodoList agent={agent} />
