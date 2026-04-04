@@ -13,8 +13,22 @@ export type IGraphShape = TLBaseShape<
 		yMax: number
 		color: string
 		strokeWidth: number
+		sliders: {
+			name: string
+			value: number
+			min: number
+			max: number
+			step: number
+		}[]
 	}
 >
+
+// tldraw module augmentation
+declare module 'tldraw' {
+	interface TLGlobalShapePropsMap {
+		graph: IGraphShape['props']
+	}
+}
 
 export const graphShapeProps: RecordProps<IGraphShape> = {
 	w: T.number,
@@ -26,4 +40,13 @@ export const graphShapeProps: RecordProps<IGraphShape> = {
 	yMax: T.number,
 	color: T.string,
 	strokeWidth: T.number,
+	sliders: T.arrayOf(
+		T.object({
+			name: T.string,
+			value: T.number,
+			min: T.number,
+			max: T.number,
+			step: T.number,
+		})
+	),
 }
