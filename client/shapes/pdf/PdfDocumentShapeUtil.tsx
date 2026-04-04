@@ -8,9 +8,12 @@ import {
 	useEditor
 } from 'tldraw'
 import { IPdfDocumentShape, pdfDocumentShapeProps } from './PdfDocumentShape'
-import { useState } from 'react'
-
-const PAGE_SUFFIX_PATTERN = / Page \d+$/
+import {
+	PDF_OVERLAY_Z_INDEX,
+	PDF_PAGE_SUFFIX_PATTERN,
+	PDF_SHAPE_DEFAULT_H,
+	PDF_SHAPE_DEFAULT_W,
+} from './PdfConstants'
 
 export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 	static override type = 'pdf' as const
@@ -22,8 +25,8 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 
 	override getDefaultProps(): IPdfDocumentShape['props'] {
 		return {
-			w: 260,
-			h: 180,
+			w: PDF_SHAPE_DEFAULT_W,
+			h: PDF_SHAPE_DEFAULT_H,
 			assetIds: [],
 			currentPage: 0,
 		}
@@ -32,7 +35,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 	override component(shape: IPdfDocumentShape) {
 		const editor = useEditor()
 		const { assetIds, currentPage } = shape.props
-		const [isOpen, setIsOpen] = useState(false)
+		const isOpen = Boolean((shape.meta as Record<string, unknown> | undefined)?.pdfPopupOpen)
 		const safeCurrentPage = Math.min(currentPage, Math.max(0, assetIds.length - 1))
 
 		if (!assetIds.length) {
@@ -49,7 +52,12 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const currentAssetId = assetIds[safeCurrentPage]
 		const asset = editor.getAsset(currentAssetId) as TLAsset & { props: { src: string } }
 		const firstAsset = editor.getAsset(assetIds[0]) as (TLAsset & { props: { name?: string } }) | undefined
-		const inferredName = firstAsset?.props?.name?.replace(PAGE_SUFFIX_PATTERN, '') ?? 'Document.pdf'
+		const firstAssetName = firstAsset?.props?.name
+		const inferredName = firstAssetName
+			? PDF_PAGE_SUFFIX_PATTERN.test(firstAssetName)
+				? firstAssetName.replace(PDF_PAGE_SUFFIX_PATTERN, '')
+				: firstAssetName
+			: 'Document.pdf'
 
 		const handlePrev = (e: React.MouseEvent) => {
 			e.stopPropagation()
@@ -90,7 +98,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				},
 				meta: {
 					pdfSourceShapeId: shape.id,
-					pdfSourcePage: pageIndex + 1,
+					pdfSourcePageIndex: pageIndex,
 				},
 			})
 		}
@@ -108,6 +116,26 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		}
 
 		const pageLabel = `${safeCurrentPage + 1} / ${assetIds.length}`
+		const openPopup = () => {
+			editor.updateShape<IPdfDocumentShape>({
+				id: shape.id,
+				type: 'pdf',
+				meta: {
+					...shape.meta,
+					pdfPopupOpen: true,
+				},
+			})
+		}
+		const closePopup = () => {
+			editor.updateShape<IPdfDocumentShape>({
+				id: shape.id,
+				type: 'pdf',
+				meta: {
+					...shape.meta,
+					pdfPopupOpen: false,
+				},
+			})
+		}
 		const documentFace = (
 			<div
 				style={{
@@ -153,7 +181,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 					<button
 						onClick={(e) => {
 							e.stopPropagation()
-							setIsOpen(true)
+							openPopup()
 						}}
 						style={{
 							cursor: 'pointer',
@@ -180,13 +208,13 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 						style={{
 							position: 'fixed',
 							inset: 0,
-							zIndex: 99999,
+							zIndex: PDF_OVERLAY_Z_INDEX,
 							backgroundColor: 'rgba(0,0,0,0.45)',
 							display: 'flex',
 							alignItems: 'center',
 							justifyContent: 'center',
 						}}
-						onClick={() => setIsOpen(false)}
+						onClick={closePopup}
 						onPointerDown={(e) => e.stopPropagation()}
 					>
 						<div
@@ -245,7 +273,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 										Add All Pages
 									</button>
 									<button
-										onClick={() => setIsOpen(false)}
+										onClick={closePopup}
 										style={{ cursor: 'pointer', padding: '4px 8px', border: '1px solid #ced4da', borderRadius: 4, backgroundColor: '#fff' }}
 									>
 										Close

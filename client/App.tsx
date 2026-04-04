@@ -34,13 +34,16 @@ import { GraphTool } from './tools/GraphTool'
 import { EquationShapeUtil } from './shapes/equation/EquationShapeUtil'
 import { GraphShapeUtil } from './shapes/graph/GraphShapeUtil'
 import { PdfDocumentShapeUtil } from './shapes/pdf/PdfDocumentShapeUtil'
+import {
+	PDF_OVERLAY_Z_INDEX,
+	PDF_PAGE_SUFFIX_TEXT,
+	PDF_SHAPE_DEFAULT_H,
+	PDF_SHAPE_DEFAULT_W,
+} from './shapes/pdf/PdfConstants'
 import { AssetRecordType, TLAsset, TLAssetId } from 'tldraw'
 
 // Customize tldraw's styles to play to the agent's strengths
 DefaultSizeStyle.setDefaultValue('s')
-
-const PDF_SHAPE_DEFAULT_W = 260
-const PDF_SHAPE_DEFAULT_H = 180
 
 async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y: number }) {
 	if (file.type !== 'application/pdf') return
@@ -63,7 +66,7 @@ async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y:
 			props: {
 				w: page.width,
 				h: page.height,
-				name: `${file.name} Page ${page.pageNumber}`,
+				name: `${file.name}${PDF_PAGE_SUFFIX_TEXT}${page.pageNumber}`,
 				isAnimated: false,
 				mimeType: 'image/png',
 				src: page.dataUrl,
@@ -190,7 +193,7 @@ function PdfUploadButton() {
 				position: 'absolute',
 				top: 12,
 				left: 12,
-				zIndex: 99999,
+				zIndex: PDF_OVERLAY_Z_INDEX,
 				pointerEvents: 'all',
 			}}
 		>
