@@ -74,12 +74,12 @@ function findIntersections(
 	const dx = (xMax - xMin) / steps
 	const threshold = Math.max(1e-3, dx / 2)
 
-	const rootBetween = (fa: number, fb: number, xa: number, xb: number) => {
-		if (Math.abs(fa) < 1e-8) return xa
-		if (Math.abs(fb) < 1e-8) return xb
-		const denom = fb - fa
+	const rootBetween = (diffA: number, diffB: number, xa: number, xb: number) => {
+		if (Math.abs(diffA) < 1e-8) return xa
+		if (Math.abs(diffB) < 1e-8) return xb
+		const denom = diffB - diffA
 		if (Math.abs(denom) < 1e-12) return (xa + xb) / 2
-		return xa - (fa * (xb - xa)) / denom
+		return xa - (diffA * (xb - xa)) / denom
 	}
 
 	for (let i = 0; i < functionsToPlot.length; i++) {
@@ -122,6 +122,24 @@ function findIntersections(
 	}
 
 	return intersections
+}
+
+function areSlidersEqual(a: GraphSlider[], b: GraphSlider[]) {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) {
+		const left = a[i]
+		const right = b[i]
+		if (
+			left.name !== right.name ||
+			left.value !== right.value ||
+			left.min !== right.min ||
+			left.max !== right.max ||
+			left.step !== right.step
+		) {
+			return false
+		}
+	}
+	return true
 }
 
 // @ts-expect-error — tldraw's TLShape union is closed; custom shapes work fine at runtime
@@ -243,7 +261,7 @@ function GraphRenderer({
 	const { w, h, functionStr, xMin, xMax, yMin, yMax, color, strokeWidth, sliders } = shape.props
 	const [editStr, setEditStr] = useState(functionStr)
 	const inputRef = useRef<HTMLInputElement>(null)
-	const hasHydratedSlidersRef = useRef(false)
+	const hasInitializedSlidersRef = useRef(false)
 
 	const toSvgX = (x: number) => ((x - xMin) / (xMax - xMin)) * w
 	const toSvgY = (y: number) => h - ((y - yMin) / (yMax - yMin)) * h
@@ -285,19 +303,11 @@ function GraphRenderer({
 			: [{ expr: functionStr, label: functionStr, color }]
 
 	const expectedSliders = mergeSliders(functionsToPlot.map((fn) => fn.expr), sliders)
-	if (!hasHydratedSlidersRef.current || expectedSliders.length !== sliders.length || expectedSliders.some((s, i) => {
-		const current = sliders[i]
-		return (
-			!current ||
-			current.name !== s.name ||
-			current.value !== s.value ||
-			current.min !== s.min ||
-			current.max !== s.max ||
-			current.step !== s.step
-		)
-	})) {
-		hasHydratedSlidersRef.current = true
-		if (expectedSliders.length !== sliders.length || expectedSliders.some((s, i) => !sliders[i] || sliders[i].name !== s.name)) {
+	const needsInitialization = !hasInitializedSlidersRef.current
+	const slidersDiffer = !areSlidersEqual(expectedSliders, sliders)
+	if (needsInitialization || slidersDiffer) {
+		hasInitializedSlidersRef.current = true
+		if (slidersDiffer) {
 			editor.updateShape({
 				id: shape.id,
 				type: 'graph',
