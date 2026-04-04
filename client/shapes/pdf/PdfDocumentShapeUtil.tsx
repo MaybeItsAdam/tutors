@@ -26,6 +26,7 @@ import {
 
 type PdfShapeMeta = {
 	pdfPopupOpen?: boolean
+	customName?: string
 }
 
 export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
@@ -72,6 +73,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				? firstAssetName.replace(PDF_PAGE_SUFFIX_PATTERN, '')
 				: firstAssetName
 			: PDF_DEFAULT_NAME
+		const displayName = shapeMeta.customName ?? inferredName
 
 		const handlePrev = (e: React.MouseEvent) => {
 			e.stopPropagation()
@@ -158,21 +160,16 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 					alignItems: 'center',
 					justifyContent: 'center',
 					gap: 10,
-					backgroundColor: '#2a2f3a',
-					borderRadius: 10,
+					backgroundColor: 'transparent',
 				}}
 			>
 				<div
 					style={{
 						width: 112,
 						height: 142,
-						borderRadius: 8,
-						border: '1px solid rgba(255,255,255,0.22)',
-						background: '#1e232d',
 						display: 'flex',
 						alignItems: 'center',
 						justifyContent: 'center',
-						boxShadow: '0 5px 18px rgba(0,0,0,0.32)',
 						cursor: 'pointer',
 					}}
 					onDoubleClick={(e) => {
@@ -190,7 +187,6 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 								height: PDF_THUMBNAIL_H,
 								objectFit: 'cover',
 								borderRadius: 4,
-								boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
 							}}
 							draggable={false}
 						/>
@@ -201,18 +197,55 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				<div
 					style={{
 						maxWidth: 140,
-						padding: '3px 10px',
+						padding: '0 6px',
 						borderRadius: 8,
-						backgroundColor: '#0c62d6',
-						color: '#ffffff',
-						fontSize: 13,
+						backgroundColor: 'transparent',
+						color: '#e2e8f0',
+						fontSize: 12,
 						fontWeight: 700,
-						whiteSpace: 'nowrap',
-						overflow: 'hidden',
-						textOverflow: 'ellipsis',
+						height: 26,
+						display: 'flex',
+						alignItems: 'center',
 					}}
+					onPointerDown={(e) => e.stopPropagation()}
 				>
-					{inferredName}
+					<input
+						value={displayName}
+						onChange={(e) =>
+							editor.updateShape<IPdfDocumentShape>({
+								id: shape.id,
+								type: 'pdf',
+								meta: {
+									...shapeMeta,
+									customName: e.currentTarget.value,
+								},
+							})
+						}
+						onBlur={(e) => {
+							const trimmed = e.currentTarget.value.trim()
+							editor.updateShape<IPdfDocumentShape>({
+								id: shape.id,
+								type: 'pdf',
+								meta: {
+									...shapeMeta,
+									customName: trimmed.length ? trimmed : undefined,
+								},
+							})
+						}}
+						style={{
+							width: '100%',
+							background: 'transparent',
+							border: 'none',
+							outline: 'none',
+							color: '#e2e8f0',
+							fontSize: 12,
+							fontWeight: 700,
+							textAlign: 'center',
+							whiteSpace: 'nowrap',
+							overflow: 'hidden',
+							textOverflow: 'ellipsis',
+						}}
+					/>
 				</div>
 			</div>
 		)
@@ -323,10 +356,12 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 	}
 	
 	override onResize = (shape: IPdfDocumentShape, info: any) => {
+		const nextW = info?.bounds?.w ?? shape.props.w
+		const nextH = info?.bounds?.h ?? shape.props.h
 		return {
 			props: {
-				w: Math.max(100, info.bounds.w),
-				h: Math.max(100, info.bounds.h),
+				w: Math.max(100, nextW),
+				h: Math.max(100, nextH),
 			},
 		}
 	}
