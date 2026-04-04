@@ -1,12 +1,14 @@
 import { FormEventHandler, useCallback, useRef } from 'react'
-import { useAgent } from '../agent/TldrawAgentAppProvider'
+import { useAgent, useCurrentWorkspace } from '../agent/TldrawAgentAppProvider'
 import { ChatHistory } from './chat-history/ChatHistory'
 import { ChatInput } from './ChatInput'
 import { TodoList } from './TodoList'
 import { BYOKSettings } from './byok/BYOKSettings'
+import { WorkspacePanel } from './WorkspacePanel'
 
 export function ChatPanel() {
 	const agent = useAgent()
+	const currentWorkspace = useCurrentWorkspace()
 	const inputRef = useRef<HTMLTextAreaElement>(null)
 
 	const handleSubmit = useCallback<FormEventHandler<HTMLFormElement>>(
@@ -48,8 +50,10 @@ export function ChatPanel() {
 				<button className="new-chat-button" onClick={handleNewChat}>
 					+
 				</button>
+				{currentWorkspace && <span className="workspace-current-name">{currentWorkspace.name}</span>}
 				<BYOKSettings />
 			</div>
+			<WorkspacePanel currentWorkspace={currentWorkspace} />
 			<ChatHistory agent={agent} />
 			<div className="chat-input-container">
 				<TodoList agent={agent} />

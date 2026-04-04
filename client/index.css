@@ -85,6 +85,20 @@ body {
 .chat-header {
 	display: flex;
 	justify-content: flex-end;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 4px;
+}
+
+.workspace-current-name {
+	font-size: 10px;
+	color: var(--tl-color-text-2);
+	margin-right: auto;
+	margin-left: 8px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 160px;
 }
 
 .new-chat-button {
@@ -103,6 +117,130 @@ body {
 
 .new-chat-button:hover {
 	background-color: var(--tl-color-muted-2);
+}
+
+.workspace-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 0 12px 8px;
+	border-bottom: 1px solid var(--tl-color-muted-1);
+}
+
+.workspace-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.workspace-label {
+	font-size: 10px;
+	color: var(--tl-color-text-2);
+	width: 64px;
+}
+
+.workspace-select,
+.workspace-input {
+	flex: 1;
+	background: var(--tl-color-muted-1);
+	color: var(--tl-color-text);
+	border: 1px solid var(--tl-color-muted-2);
+	border-radius: 6px;
+	padding: 4px 6px;
+	font-size: 11px;
+}
+
+.workspace-btn {
+	background: var(--tl-color-muted-1);
+	color: var(--tl-color-text-1);
+	border: 1px solid var(--tl-color-muted-2);
+	border-radius: 6px;
+	font-size: 10px;
+	padding: 4px 6px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.workspace-btn:hover {
+	color: var(--tl-color-text);
+	border-color: var(--tl-color-text-2);
+}
+
+.workspace-btn-danger {
+	color: hsl(0, 75%, 70%);
+}
+
+.workspace-history {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	max-height: 200px;
+	overflow: auto;
+	padding-right: 2px;
+}
+
+.workspace-branch {
+	background: color-mix(in srgb, var(--tl-color-muted-1) 70%, transparent);
+	border: 1px solid var(--tl-color-muted-2);
+	border-radius: 8px;
+	padding: 6px;
+}
+
+.workspace-branch-current {
+	border-color: var(--tl-color-primary);
+}
+
+.workspace-branch-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.workspace-branch-actions {
+	display: flex;
+	gap: 4px;
+}
+
+.workspace-meta {
+	font-size: 10px;
+	color: var(--tl-color-text-2);
+}
+
+.workspace-snapshots {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.workspace-snapshot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px;
+	background: var(--tl-color-panel);
+	border: 1px solid var(--tl-color-muted-2);
+	border-radius: 6px;
+	padding: 4px 6px;
+}
+
+.workspace-snapshot-main {
+	min-width: 0;
+}
+
+.workspace-snapshot-name {
+	font-size: 11px;
+	color: var(--tl-color-text-1);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 180px;
+}
+
+.workspace-snapshot-actions {
+	display: flex;
+	gap: 4px;
 }
 
 /* Chat Input */

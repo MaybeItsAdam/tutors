@@ -104,6 +104,12 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	loadAppState(appState: PersistedAppState) {
 		this.isLoadingState = true
 		try {
+			const targetAgentIds = new Set(Object.keys(appState.agents))
+			for (const existingAgent of this.app.agents.getAgents()) {
+				if (!targetAgentIds.has(existingAgent.id)) {
+					this.app.agents.deleteAgent(existingAgent.id)
+				}
+			}
 			for (const agentId of Object.keys(appState.agents)) {
 				this.app.agents.createAgent(agentId)
 			}
