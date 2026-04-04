@@ -149,6 +149,27 @@ body {
 	margin-top: 10px;
 }
 
+.workspace-history-canvas {
+	margin-top: 10px;
+	border: 1px solid #e5e7eb;
+	border-radius: 6px;
+	background: #f9fafb;
+	overflow: auto;
+	max-height: 60vh;
+}
+
+.workspace-history-canvas-inner {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	gap: 10px;
+	padding: 10px;
+	min-width: 100%;
+}
+
+.workspace-history-node {
+	user-select: none;
+}
+
 .workspace-timeline-snapshot {
 	background: #ffffff;
 	border: 1px solid #e5e7eb;
@@ -165,6 +186,70 @@ body {
 	color: #6b7280;
 	font-size: 10px;
 	margin-top: 2px;
+}
+
+.workspace-snapshot-preview {
+	margin-top: 8px;
+	border: 1px solid #e5e7eb;
+	border-radius: 4px;
+	background: #ffffff;
+	padding: 8px;
+}
+
+.workspace-snapshot-preview-nav {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.workspace-snapshot-arrow {
+	width: 24px;
+	height: 24px;
+	border: 1px solid #d1d5db;
+	border-radius: 4px;
+	background: #ffffff;
+	color: #111827;
+	cursor: pointer;
+}
+
+.workspace-snapshot-arrow:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.workspace-snapshot-preview-title {
+	flex: 1;
+	font-size: 11px;
+	color: #111827;
+	text-align: center;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.workspace-snapshot-preview-canvas {
+	margin-top: 8px;
+	border: 1px dashed #d1d5db;
+	border-radius: 4px;
+	padding: 10px;
+	background: #ffffff;
+	min-height: 76px;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+}
+
+.workspace-snapshot-preview-count {
+	font-size: 12px;
+	color: #111827;
+	font-weight: 600;
+}
+
+.workspace-snapshot-preview-note {
+	margin-top: 4px;
+	font-size: 10px;
+	color: #6b7280;
 }
 
 /* Chat Panel */
