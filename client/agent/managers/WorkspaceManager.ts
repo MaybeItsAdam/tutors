@@ -3,6 +3,9 @@ import { PersistedAppState } from './AgentAppPersistenceManager'
 import { BaseAgentAppManager } from './BaseAgentAppManager'
 
 const STORAGE_KEY = 'tldraw-agent-app:workspaces:v1'
+const AUTO_SNAPSHOT_CHECK_INTERVAL_MS = 30_000
+const WORKING_STATE_SAVE_INTERVAL_MS = 5_000
+const MS_PER_MINUTE = 60_000
 
 export interface WorkspaceState {
 	editorSnapshot: TLEditorSnapshot
@@ -578,16 +581,19 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		if (!intervalMinutes || intervalMinutes <= 0) return
 		const now = Date.now()
 		const last = workspace.lastAutoSnapshotAt ?? 0
-		if (now - last < intervalMinutes * 60_000) return
-		this.createSnapshot(`Auto ${new Date(now).toLocaleTimeString()}`, { isAuto: true })
+		if (now - last < intervalMinutes * MS_PER_MINUTE) return
+		this.createSnapshot(`Auto ${new Date(now).toLocaleString()}`, { isAuto: true })
 	}
 
 	private startTimers() {
-		this.autoSnapshotTimer = window.setInterval(() => this.maybeAutoSnapshot(), 30_000)
+		this.autoSnapshotTimer = window.setInterval(
+			() => this.maybeAutoSnapshot(),
+			AUTO_SNAPSHOT_CHECK_INTERVAL_MS
+		)
 		this.workingStateSaveTimer = window.setInterval(() => {
 			this.captureCurrentBranchWorkingState()
 			this.persistState()
-		}, 5_000)
+		}, WORKING_STATE_SAVE_INTERVAL_MS)
 	}
 
 	private loadPersistedState(): PersistedWorkspacesState | null {

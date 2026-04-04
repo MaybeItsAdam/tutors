@@ -27,7 +27,7 @@ export function WorkspacePanel({ currentWorkspace }: { currentWorkspace: Workspa
 	}
 
 	const snapshots = app.workspaces.getSnapshotsForBranch(currentBranch.id)
-	const selectedMergeSource = branches.find((branch) => branch.id !== currentBranch.id)?.id ?? ''
+	const candidateMergeBranchId = branches.find((branch) => branch.id !== currentBranch.id)?.id ?? ''
 
 	return (
 		<div className="workspace-panel">
@@ -102,7 +102,7 @@ export function WorkspacePanel({ currentWorkspace }: { currentWorkspace: Workspa
 				<button
 					className="workspace-btn"
 					onClick={() => {
-						const sourceId = selectedMergeSource
+						const sourceId = candidateMergeBranchId
 						if (!sourceId) return
 						app.workspaces.mergeBranch(sourceId)
 					}}
