@@ -150,8 +150,7 @@ function findIntersections(
 			merged.push(point)
 			continue
 		}
-		existing.x = (existing.x + point.x) / 2
-		existing.y = (existing.y + point.y) / 2
+		// Keep the earliest candidate to avoid cumulative centroid drift.
 	}
 
 	return merged
