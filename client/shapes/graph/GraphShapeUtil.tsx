@@ -1,5 +1,5 @@
 import { evaluate } from 'mathjs'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { HTMLContainer, Rectangle2d, ShapeUtil, useEditor, useValue } from 'tldraw'
 import { IEquationShape } from '../equation/EquationShape'
 import { graphShapeProps, IGraphShape } from './GraphShape'
@@ -19,6 +19,7 @@ const CURVE_COLORS = ['#60a5fa', '#34d399', '#f97316', '#f472b6', '#a78bfa', '#f
 type GraphSlider = IGraphShape['props']['sliders'][number]
 
 function isConstantName(name: string) {
+	// Constants are single-letter symbols except x/X (reserved as the graph's independent variable).
 	return /^[a-wyzA-WYZ]$/.test(name)
 }
 
@@ -316,17 +317,25 @@ function GraphRenderer({
 			? boundFunctions.map((f, i) => ({ ...f, color: CURVE_COLORS[i % CURVE_COLORS.length] }))
 			: [{ expr: functionStr, label: functionStr, color }]
 
-	const expectedSliders = mergeSliders(functionsToPlot.map((fn) => fn.expr), sliders)
+	const expectedSliders = useMemo(
+		() => mergeSliders(functionsToPlot.map((fn) => fn.expr), sliders),
+		[functionsToPlot, sliders]
+	)
 	const slidersDiffer = !areSlidersEqual(expectedSliders, sliders)
-	if (slidersDiffer) {
+	useEffect(() => {
+		if (!slidersDiffer) return
 		editor.updateShape({
 			id: shape.id,
 			type: 'graph',
 			props: { sliders: expectedSliders },
 		})
-	}
+	}, [editor, expectedSliders, shape.id, slidersDiffer])
 
-	const evaluateExpression = useMemo(() => createExpressionEvaluator(sliders), [sliders])
+	const sliderSignature = useMemo(
+		() => sliders.map((s) => `${s.name}:${s.value}:${s.min}:${s.max}:${s.step}`).join('|'),
+		[sliders]
+	)
+	const evaluateExpression = useMemo(() => createExpressionEvaluator(sliders), [sliderSignature])
 	const intersections = findIntersections(functionsToPlot, sliders, xMin, xMax)
 
 	const handleInputKeyDown = (e: React.KeyboardEvent) => {
