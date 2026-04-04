@@ -7,7 +7,7 @@ import {
 	TLImageShape,
 	useEditor
 } from 'tldraw'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { IPdfDocumentShape, pdfDocumentShapeProps } from './PdfDocumentShape'
 import {
 	PDF_DEFAULT_NAME,
