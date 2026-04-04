@@ -23,7 +23,6 @@ import {
 	PDF_POPUP_MIN_POSITION,
 	PDF_POPUP_MIN_W,
 	PDF_PAGE_SUFFIX_PATTERN,
-	PDF_POPUP_OVERLAY_BG,
 	PDF_POPUP_TITLE_MAX_WIDTH,
 	PDF_POPUP_VIEWPORT_MARGIN,
 	PDF_POPUP_Z_INDEX,
@@ -31,8 +30,6 @@ import {
 	PDF_SHAPE_DEFAULT_W,
 	PDF_THUMBNAIL_H,
 	PDF_THUMBNAIL_CONTAINER_H_PADDING,
-	PDF_THUMBNAIL_CONTAINER_MAX_H,
-	PDF_THUMBNAIL_CONTAINER_MAX_W,
 	PDF_THUMBNAIL_CONTAINER_MIN_H,
 	PDF_THUMBNAIL_CONTAINER_MIN_W,
 	PDF_THUMBNAIL_CONTAINER_W_PADDING,
@@ -74,11 +71,11 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const safeCurrentPage = maxPageIndex < 0 ? 0 : Math.min(Math.max(currentPage, 0), maxPageIndex)
 		const thumbnailContainerW = Math.max(
 			PDF_THUMBNAIL_CONTAINER_MIN_W,
-			Math.min(shape.props.w - PDF_THUMBNAIL_CONTAINER_W_PADDING, PDF_THUMBNAIL_CONTAINER_MAX_W)
+			shape.props.w - PDF_THUMBNAIL_CONTAINER_W_PADDING
 		)
 		const thumbnailContainerH = Math.max(
 			PDF_THUMBNAIL_CONTAINER_MIN_H,
-			Math.min(shape.props.h - PDF_THUMBNAIL_CONTAINER_H_PADDING, PDF_THUMBNAIL_CONTAINER_MAX_H)
+			shape.props.h - PDF_THUMBNAIL_CONTAINER_H_PADDING
 		)
 		const [popupRect, setPopupRect] = useState({
 			left: PDF_POPUP_DEFAULT_LEFT,
@@ -332,133 +329,122 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				{isOpen && (
 					<div
 						style={{
-							position: 'fixed',
-							inset: 0,
+							position: 'absolute',
+							left: popupRect.left,
+							top: popupRect.top,
+							width: `min(${popupRect.width}px, calc(100vw - ${PDF_POPUP_VIEWPORT_MARGIN}px))`,
+							height: `min(${popupRect.height}px, calc(100vh - ${PDF_POPUP_VIEWPORT_MARGIN}px))`,
 							zIndex: PDF_POPUP_Z_INDEX,
-							backgroundColor: PDF_POPUP_OVERLAY_BG,
+							backgroundColor: 'white',
+							borderRadius: 12,
+							boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+							display: 'flex',
+							flexDirection: 'column',
+							overflow: 'hidden',
 							pointerEvents: 'all',
-							touchAction: 'none',
+							touchAction: 'auto',
 						}}
-						onPointerDown={(e) => {
-							e.stopPropagation()
-							closePopup()
-						}}
-						onClick={(e) => {
-							e.stopPropagation()
-						}}
+						onClick={(e) => e.stopPropagation()}
+						onPointerDown={(e) => e.stopPropagation()}
 					>
 						<div
 							style={{
-								position: 'fixed',
-								left: popupRect.left,
-								top: popupRect.top,
-								width: `min(${popupRect.width}px, calc(100vw - ${PDF_POPUP_VIEWPORT_MARGIN}px))`,
-								height: `min(${popupRect.height}px, calc(100vh - ${PDF_POPUP_VIEWPORT_MARGIN}px))`,
-								backgroundColor: 'white',
-								borderRadius: 12,
-								boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
 								display: 'flex',
-								flexDirection: 'column',
-								overflow: 'hidden',
+								alignItems: 'center',
+								justifyContent: 'space-between',
+								padding: '10px 14px',
+								borderBottom: '1px solid #e4e7ee',
+								backgroundColor: '#f8f9fc',
+								cursor: 'move',
+								userSelect: 'none',
 							}}
-							onClick={(e) => e.stopPropagation()}
+							onPointerDown={(e) => {
+								e.stopPropagation()
+								dragStateRef.current = {
+									pointerId: e.pointerId,
+									startX: e.clientX,
+									startY: e.clientY,
+									startLeft: popupRect.left,
+									startTop: popupRect.top,
+								}
+							}}
+						>
+							<div style={{ fontSize: 14, fontWeight: 600, maxWidth: PDF_POPUP_TITLE_MAX_WIDTH, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+								📄 {inferredName}
+							</div>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+								<button
+									onClick={handlePrev}
+									disabled={safeCurrentPage === 0}
+									style={{ cursor: safeCurrentPage === 0 ? 'default' : 'pointer', padding: '4px 8px' }}
+								>
+									&lt;
+								</button>
+								<span style={{ fontSize: 13, minWidth: 72, textAlign: 'center' }}>{safeCurrentPage + 1} / {assetIds.length}</span>
+								<button
+									onClick={handleNext}
+									disabled={safeCurrentPage === assetIds.length - 1}
+									style={{ cursor: safeCurrentPage === assetIds.length - 1 ? 'default' : 'pointer', padding: '4px 8px' }}
+								>
+									&gt;
+								</button>
+								<button
+									onClick={handleExtractCurrent}
+									style={{ cursor: 'pointer', padding: '4px 8px', border: '1px solid #ced4da', borderRadius: 4, backgroundColor: '#fff' }}
+								>
+									Add Page Object
+								</button>
+								<button
+									onClick={handleExtractAll}
+									style={{ cursor: 'pointer', padding: '4px 8px', border: '1px solid #ced4da', borderRadius: 4, backgroundColor: '#fff' }}
+								>
+									Add All Pages
+								</button>
+								<button
+									onClick={closePopup}
+									aria-label="Close PDF viewer"
+									style={{ cursor: 'pointer', padding: '4px 8px', border: '1px solid #ced4da', borderRadius: 4, backgroundColor: '#fff' }}
+								>
+									Close (Esc)
+								</button>
+							</div>
+						</div>
+						<div
+							style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', backgroundColor: '#f1f3f8' }}
+							onWheel={(e) => e.stopPropagation()}
 							onPointerDown={(e) => e.stopPropagation()}
 						>
-							<div
-								style={{
-									display: 'flex',
-									alignItems: 'center',
-									justifyContent: 'space-between',
-									padding: '10px 14px',
-									borderBottom: '1px solid #e4e7ee',
-									backgroundColor: '#f8f9fc',
-									cursor: 'move',
-									userSelect: 'none',
-								}}
-								onPointerDown={(e) => {
-									e.stopPropagation()
-									dragStateRef.current = {
-										pointerId: e.pointerId,
-										startX: e.clientX,
-										startY: e.clientY,
-										startLeft: popupRect.left,
-										startTop: popupRect.top,
-									}
-								}}
-							>
-								<div style={{ fontSize: 14, fontWeight: 600, maxWidth: PDF_POPUP_TITLE_MAX_WIDTH, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-									📄 {inferredName}
-								</div>
-								<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-									<button
-										onClick={handlePrev}
-										disabled={safeCurrentPage === 0}
-										style={{ cursor: safeCurrentPage === 0 ? 'default' : 'pointer', padding: '4px 8px' }}
-									>
-										&lt;
-									</button>
-									<span style={{ fontSize: 13, minWidth: 72, textAlign: 'center' }}>{safeCurrentPage + 1} / {assetIds.length}</span>
-									<button
-										onClick={handleNext}
-										disabled={safeCurrentPage === assetIds.length - 1}
-										style={{ cursor: safeCurrentPage === assetIds.length - 1 ? 'default' : 'pointer', padding: '4px 8px' }}
-									>
-										&gt;
-									</button>
-									<button
-										onClick={handleExtractCurrent}
-										style={{ cursor: 'pointer', padding: '4px 8px', border: '1px solid #ced4da', borderRadius: 4, backgroundColor: '#fff' }}
-									>
-										Add Page Object
-									</button>
-									<button
-										onClick={handleExtractAll}
-										style={{ cursor: 'pointer', padding: '4px 8px', border: '1px solid #ced4da', borderRadius: 4, backgroundColor: '#fff' }}
-									>
-										Add All Pages
-									</button>
-									<button
-										onClick={closePopup}
-										aria-label="Close PDF viewer"
-										style={{ cursor: 'pointer', padding: '4px 8px', border: '1px solid #ced4da', borderRadius: 4, backgroundColor: '#fff' }}
-									>
-										Close (Esc)
-									</button>
-								</div>
-							</div>
-							<div style={{ flex: 1, overflowY: 'auto', backgroundColor: '#f1f3f8' }}>
-								{asset?.props?.src ? (
-									<img
-										src={asset.props.src}
-										alt={`Page ${safeCurrentPage + 1}`}
-										style={{ width: '100%', height: 'auto', display: 'block' }}
-										draggable={false}
-									/>
-								) : (
-									<div style={{ color: '#5a6578' }}>Missing Asset</div>
-								)}
-							</div>
-							<div
-								style={{
-									position: 'absolute',
-									right: 0,
-									bottom: 0,
-									width: 18,
-									height: 18,
-									cursor: 'nwse-resize',
-								}}
-								onPointerDown={(e) => {
-									e.stopPropagation()
-									resizeStateRef.current = {
-										pointerId: e.pointerId,
-										startX: e.clientX,
-										startY: e.clientY,
-										startW: popupRect.width,
-										startH: popupRect.height,
-									}
-								}}
-							/>
+							{asset?.props?.src ? (
+								<img
+									src={asset.props.src}
+									alt={`Page ${safeCurrentPage + 1}`}
+									style={{ width: '100%', height: 'auto', display: 'block' }}
+									draggable={false}
+								/>
+							) : (
+								<div style={{ color: '#5a6578' }}>Missing Asset</div>
+							)}
 						</div>
+						<div
+							style={{
+								position: 'absolute',
+								right: 0,
+								bottom: 0,
+								width: 18,
+								height: 18,
+								cursor: 'nwse-resize',
+							}}
+							onPointerDown={(e) => {
+								e.stopPropagation()
+								resizeStateRef.current = {
+									pointerId: e.pointerId,
+									startX: e.clientX,
+									startY: e.clientY,
+									startW: popupRect.width,
+									startH: popupRect.height,
+								}
+							}}
+						/>
 					</div>
 				)}
 			</>
