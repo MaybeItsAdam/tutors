@@ -25,6 +25,143 @@ body {
 	position: relative;
 }
 
+.workspace-back-arrow {
+	position: absolute;
+	top: 12px;
+	left: 12px;
+	z-index: 1200;
+	width: 36px;
+	height: 36px;
+	border-radius: 999px;
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	background: rgba(20, 22, 27, 0.8);
+	color: white;
+	cursor: pointer;
+	font-size: 18px;
+}
+
+.workspace-screen {
+	position: absolute;
+	inset: 0;
+	z-index: 1100;
+	background: linear-gradient(180deg, #0d1117 0%, #111827 100%);
+	padding: 80px 32px 32px;
+	overflow: auto;
+}
+
+.workspace-screen-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 16px;
+}
+
+.workspace-screen-header h1,
+.workspace-screen-header h2 {
+	color: #f1f5f9;
+	margin: 0;
+	margin-right: auto;
+}
+
+.workspace-screen-primary,
+.workspace-screen-secondary {
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	background: rgba(255, 255, 255, 0.08);
+	color: #f1f5f9;
+	border-radius: 8px;
+	padding: 8px 12px;
+	cursor: pointer;
+}
+
+.workspace-screen-primary:hover,
+.workspace-screen-secondary:hover,
+.workspace-landing-card:hover {
+	background: rgba(255, 255, 255, 0.14);
+}
+
+.workspace-landing-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: 12px;
+}
+
+.workspace-landing-card {
+	text-align: left;
+	background: rgba(255, 255, 255, 0.07);
+	border: 1px solid rgba(255, 255, 255, 0.16);
+	border-radius: 10px;
+	padding: 12px;
+	color: #f1f5f9;
+	cursor: pointer;
+}
+
+.workspace-landing-card-title {
+	font-size: 15px;
+	font-weight: 700;
+}
+
+.workspace-landing-card-meta {
+	font-size: 12px;
+	color: #cbd5e1;
+	margin-top: 4px;
+}
+
+.workspace-landing-card-latest {
+	font-size: 11px;
+	color: #94a3b8;
+	margin-top: 8px;
+}
+
+.workspace-timeline-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 12px;
+}
+
+.workspace-timeline-branch {
+	background: rgba(255, 255, 255, 0.07);
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	border-radius: 10px;
+	padding: 12px;
+}
+
+.workspace-timeline-branch-title {
+	color: #f8fafc;
+	font-size: 14px;
+	font-weight: 700;
+}
+
+.workspace-timeline-branch-meta {
+	color: #94a3b8;
+	font-size: 11px;
+	margin-top: 4px;
+}
+
+.workspace-timeline-snapshots {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 10px;
+}
+
+.workspace-timeline-snapshot {
+	background: rgba(15, 23, 42, 0.6);
+	border: 1px solid rgba(148, 163, 184, 0.2);
+	border-radius: 8px;
+	padding: 8px;
+}
+
+.workspace-timeline-snapshot-name {
+	color: #e2e8f0;
+	font-size: 12px;
+}
+
+.workspace-timeline-snapshot-meta {
+	color: #94a3b8;
+	font-size: 10px;
+	margin-top: 2px;
+}
+
 /* Chat Panel */
 
 .chat-panel.tl-theme__light {
