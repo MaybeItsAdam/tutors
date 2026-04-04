@@ -115,7 +115,6 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 			}
 		}
 
-		const pageLabel = `${safeCurrentPage + 1} / ${assetIds.length}`
 		const openPopup = () => {
 			editor.updateShape<IPdfDocumentShape>({
 				id: shape.id,
@@ -142,58 +141,58 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 					height: '100%',
 					display: 'flex',
 					flexDirection: 'column',
-					backgroundColor: '#f8f9fb',
+					alignItems: 'center',
+					justifyContent: 'center',
+					gap: 10,
+					backgroundColor: '#2a2f3a',
 					borderRadius: 10,
-					border: '1px solid #d9dde5',
-					overflow: 'hidden',
-					boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
 				}}
 			>
 				<div
 					style={{
-						padding: '12px 14px',
-						backgroundColor: '#eef2f7',
-						borderBottom: '1px solid #d9dde5',
-						fontSize: 13,
-						fontWeight: 600,
-						whiteSpace: 'nowrap',
-						textOverflow: 'ellipsis',
-						overflow: 'hidden',
+						width: 112,
+						height: 142,
+						borderRadius: 8,
+						border: '1px solid rgba(255,255,255,0.22)',
+						background: '#1e232d',
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'center',
+						boxShadow: '0 5px 18px rgba(0,0,0,0.32)',
+						cursor: 'pointer',
 					}}
+					onDoubleClick={(e) => {
+						e.stopPropagation()
+						openPopup()
+					}}
+					title="Double-click to open"
 				>
-					📄 {inferredName}
-				</div>
-				<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a6578', fontSize: 13 }}>
-					{assetIds.length} pages
+					{asset?.props?.src ? (
+						<img
+							src={asset.props.src}
+							alt={inferredName}
+							style={{ width: 84, height: 112, objectFit: 'cover', borderRadius: 4, boxShadow: '0 2px 8px rgba(0,0,0,0.35)' }}
+							draggable={false}
+						/>
+					) : (
+						<div style={{ color: '#cdd6e3', fontSize: 28 }}>📄</div>
+					)}
 				</div>
 				<div
 					style={{
-						padding: '10px 12px',
-						borderTop: '1px solid #d9dde5',
-						backgroundColor: '#fdfdff',
-						display: 'flex',
-						justifyContent: 'space-between',
-						alignItems: 'center',
+						maxWidth: 140,
+						padding: '3px 10px',
+						borderRadius: 8,
+						backgroundColor: '#0c62d6',
+						color: '#ffffff',
+						fontSize: 13,
+						fontWeight: 700,
+						whiteSpace: 'nowrap',
+						overflow: 'hidden',
+						textOverflow: 'ellipsis',
 					}}
-					onPointerDown={(e) => e.stopPropagation()}
 				>
-					<span style={{ fontSize: 12, color: '#5a6578' }}>{pageLabel}</span>
-					<button
-						onClick={(e) => {
-							e.stopPropagation()
-							openPopup()
-						}}
-						style={{
-							cursor: 'pointer',
-							fontSize: 12,
-							padding: '4px 8px',
-							borderRadius: 6,
-							border: '1px solid #c8d0dd',
-							backgroundColor: 'white',
-						}}
-					>
-						Open
-					</button>
+					{inferredName}
 				</div>
 			</div>
 		)

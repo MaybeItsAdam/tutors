@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
 	DefaultSizeStyle,
 	DefaultStylePanel,
@@ -12,7 +12,6 @@ import {
 	TldrawUiToastsProvider,
 	TLUiOverrides,
 	useTools,
-	useEditor,
 	Editor,
 } from 'tldraw'
 import { TldrawAgentApp } from './agent/TldrawAgentApp'
@@ -35,7 +34,6 @@ import { EquationShapeUtil } from './shapes/equation/EquationShapeUtil'
 import { GraphShapeUtil } from './shapes/graph/GraphShapeUtil'
 import { PdfDocumentShapeUtil } from './shapes/pdf/PdfDocumentShapeUtil'
 import {
-	PDF_OVERLAY_Z_INDEX,
 	PDF_PAGE_SUFFIX_TEXT,
 	PDF_SHAPE_DEFAULT_H,
 	PDF_SHAPE_DEFAULT_W,
@@ -131,6 +129,16 @@ const overrides: TLUiOverrides = {
 					editor.setCurrentTool('graph')
 				},
 			},
+			'pdf-upload': {
+				id: 'pdf-upload',
+				label: 'Upload PDF',
+				icon: 'tool-media',
+				onSelect() {
+					const input = document.getElementById('pdf-upload-input') as HTMLInputElement | null
+					input?.click()
+					editor.setCurrentTool('select')
+				},
+			},
 		}
 	},
 }
@@ -143,6 +151,7 @@ function CustomToolbar() {
 			<DefaultToolbarContent />
 			<TldrawUiMenuItem {...tools['math']} />
 			<TldrawUiMenuItem {...tools['graph']} />
+			<TldrawUiMenuItem {...tools['pdf-upload']} />
 		</DefaultToolbar>
 	)
 }
@@ -165,12 +174,15 @@ function OffsetStylePanel() {
 	)
 }
 
-function PdfUploadButton() {
-	const editor = useEditor()
+function App() {
+	const [app, setApp] = useState<TldrawAgentApp | null>(null)
+	const [showCheatSheet, setShowCheatSheet] = useState(false)
+	const editorRef = useRef<Editor | null>(null)
 
-	const handleChange = async (e: ChangeEvent<HTMLInputElement>) => {
+	const handlePdfInputChange = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
+		const editor = editorRef.current
 		const files = e.target.files
-		if (!files?.length) return
+		if (!editor || !files?.length) return
 
 		const viewport = editor.getViewportPageBounds()
 		const origin = { x: viewport.x + viewport.w / 2 - PDF_SHAPE_DEFAULT_W / 2, y: viewport.y + 40 }
@@ -185,46 +197,7 @@ function PdfUploadButton() {
 		}
 
 		e.target.value = ''
-	}
-
-	return (
-		<div
-			style={{
-				position: 'absolute',
-				top: 12,
-				left: 12,
-				zIndex: PDF_OVERLAY_Z_INDEX,
-				pointerEvents: 'all',
-			}}
-		>
-			<label
-				style={{
-					display: 'inline-flex',
-					alignItems: 'center',
-					gap: 6,
-					padding: '6px 10px',
-					borderRadius: 8,
-					border: '1px solid rgba(148,163,184,0.45)',
-					background: 'rgba(15,23,42,0.88)',
-					backdropFilter: 'blur(8px)',
-					color: '#e2e8f0',
-					fontSize: 12,
-					fontWeight: 600,
-					cursor: 'pointer',
-					boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
-				}}
-			>
-				<span style={{ fontSize: 14 }}>📎</span>
-				Upload PDF
-				<input type="file" accept="application/pdf" multiple style={{ display: 'none' }} onChange={handleChange} />
-			</label>
-		</div>
-	)
-}
-
-function App() {
-	const [app, setApp] = useState<TldrawAgentApp | null>(null)
-	const [showCheatSheet, setShowCheatSheet] = useState(false)
+	}, [])
 
 	const handleUnmount = useCallback(() => {
 		setApp(null)
@@ -261,7 +234,6 @@ function App() {
 				<>
 					<TldrawOverlays />
 					<PlotGraphButton />
-					<PdfUploadButton />
 					{app && (
 						<TldrawAgentAppContextProvider app={app}>
 							<AgentViewportBoundsHighlights />
@@ -275,11 +247,20 @@ function App() {
 
 	return (
 		<TldrawUiToastsProvider>
+			<input
+				id="pdf-upload-input"
+				type="file"
+				accept="application/pdf"
+				multiple
+				style={{ display: 'none' }}
+				onChange={handlePdfInputChange}
+			/>
 			<div className="tldraw-agent-container">
 				<div className="tldraw-canvas">
 					<Tldraw
 						persistenceKey="tldraw-agent-demo"
 						onMount={(editor) => {
+							editorRef.current = editor
 							// @ts-expect-error - Attach editor to window for debugging and testing
 							window.editor = editor
 
