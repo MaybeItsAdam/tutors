@@ -40,7 +40,6 @@ class MathIdle extends StateNode {
 
 		// Select the shape and set it to editing mode immediately
 		this.editor.select(id)
-		this.editor.setCurrentTool('select')
 		this.editor.setEditingShape(id)
 	}
 }

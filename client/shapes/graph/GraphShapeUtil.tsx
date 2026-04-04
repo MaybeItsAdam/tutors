@@ -8,8 +8,8 @@ import { latexToMathjsLines } from '../../utils/latexToMathjs'
 const SAMPLES = 400
 const INTERSECTION_EPSILON = 1e-3
 const INTERSECTION_THRESHOLD_DIVISOR = 2
-const INTERSECTION_DUPLICATE_X_FACTOR = 1.5
-const INTERSECTION_DUPLICATE_Y_FACTOR = 2
+const INTERSECTION_DUPLICATE_X_FACTOR = 2.5
+const INTERSECTION_DUPLICATE_Y_FACTOR = 4
 const INTERSECTION_OUTER_COLOR = '#f8fafc'
 const INTERSECTION_CENTER_COLOR = '#0f1117'
 
@@ -137,7 +137,24 @@ function findIntersections(
 		}
 	}
 
-	return intersections
+	// Final consolidation pass for repeated roots / tangent touches that can still emit
+	// multiple nearby candidates across adjacent sample windows.
+	const merged: { x: number; y: number; colorA: string; colorB: string }[] = []
+	for (const point of intersections.sort((p1, p2) => p1.x - p2.x)) {
+		const existing = merged.find(
+			(candidate) =>
+				Math.abs(candidate.x - point.x) < dx * INTERSECTION_DUPLICATE_X_FACTOR &&
+				Math.abs(candidate.y - point.y) < threshold * INTERSECTION_DUPLICATE_Y_FACTOR
+		)
+		if (!existing) {
+			merged.push(point)
+			continue
+		}
+		existing.x = (existing.x + point.x) / 2
+		existing.y = (existing.y + point.y) / 2
+	}
+
+	return merged
 }
 
 function areSlidersEqual(a: GraphSlider[], b: GraphSlider[]) {
@@ -433,6 +450,7 @@ function GraphRenderer({
 								stroke={p.colorB}
 								strokeWidth={1}
 							/>
+							<title>{`(${p.x.toFixed(4)}, ${p.y.toFixed(4)})`}</title>
 						</g>
 					))}
 			</svg>
