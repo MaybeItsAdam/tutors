@@ -40,6 +40,26 @@ body {
 	font-size: 18px;
 }
 
+.workspace-snapshot-fab {
+	position: absolute;
+	top: 12px;
+	left: 56px;
+	z-index: 1200;
+	height: 36px;
+	border-radius: 8px;
+	border: 1px solid #d1d5db;
+	background: #ffffff;
+	color: #111827;
+	cursor: pointer;
+	font-size: 12px;
+	font-weight: 600;
+	padding: 0 10px;
+}
+
+.workspace-snapshot-fab:hover {
+	background: #f9fafb;
+}
+
 .workspace-screen {
 	position: absolute;
 	inset: 0;

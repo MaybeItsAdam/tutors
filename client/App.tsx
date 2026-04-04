@@ -261,8 +261,17 @@ function App() {
 							←
 						</button>
 					)}
+					{app && uiView === 'editor' && (
+						<button
+							className="workspace-snapshot-fab"
+							onClick={() => app.workspaces.createSnapshot()}
+							title="Create snapshot"
+						>
+							Snapshot
+						</button>
+					)}
 				</div>
-				{uiView === 'editor' && (
+				{(uiView === 'editor' || uiView === 'timeline') && (
 					<ErrorBoundary fallback={ChatPanelFallback}>
 						{app && (
 							<TldrawAgentAppContextProvider app={app}>
