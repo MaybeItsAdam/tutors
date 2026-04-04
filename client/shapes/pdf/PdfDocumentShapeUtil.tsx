@@ -8,7 +8,9 @@ import {
 	useEditor
 } from 'tldraw'
 import { IPdfDocumentShape, pdfDocumentShapeProps } from './PdfDocumentShape'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+
+const PAGE_SUFFIX_PATTERN = / Page \d+$/
 
 export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 	static override type = 'pdf' as const
@@ -47,7 +49,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const currentAssetId = assetIds[safeCurrentPage]
 		const asset = editor.getAsset(currentAssetId) as TLAsset & { props: { src: string } }
 		const firstAsset = editor.getAsset(assetIds[0]) as (TLAsset & { props: { name?: string } }) | undefined
-		const inferredName = firstAsset?.props?.name?.replace(/ Page \d+$/, '') ?? 'Document.pdf'
+		const inferredName = firstAsset?.props?.name?.replace(PAGE_SUFFIX_PATTERN, '') ?? 'Document.pdf'
 
 		const handlePrev = (e: React.MouseEvent) => {
 			e.stopPropagation()
@@ -72,9 +74,9 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		}
 
 		const createExtractedPageShape = (assetId: TLAssetId, pageIndex: number) => {
-			const offset = pageIndex - safeCurrentPage
-			const yOffset = offset * 24
-			const xOffset = 20 + Math.max(0, offset) * 12
+			const pageOffset = pageIndex - safeCurrentPage
+			const yOffset = pageOffset * 24
+			const xOffset = 20 + Math.max(0, pageOffset) * 12
 
 			editor.createShape<TLImageShape>({
 				id: createShapeId(),
@@ -106,70 +108,67 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		}
 
 		const pageLabel = `${safeCurrentPage + 1} / ${assetIds.length}`
-
-		const documentFace = useMemo(() => {
-			return (
+		const documentFace = (
+			<div
+				style={{
+					height: '100%',
+					display: 'flex',
+					flexDirection: 'column',
+					backgroundColor: '#f8f9fb',
+					borderRadius: 10,
+					border: '1px solid #d9dde5',
+					overflow: 'hidden',
+					boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+				}}
+			>
 				<div
 					style={{
-						height: '100%',
-						display: 'flex',
-						flexDirection: 'column',
-						backgroundColor: '#f8f9fb',
-						borderRadius: 10,
-						border: '1px solid #d9dde5',
+						padding: '12px 14px',
+						backgroundColor: '#eef2f7',
+						borderBottom: '1px solid #d9dde5',
+						fontSize: 13,
+						fontWeight: 600,
+						whiteSpace: 'nowrap',
+						textOverflow: 'ellipsis',
 						overflow: 'hidden',
-						boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
 					}}
 				>
-					<div
-						style={{
-							padding: '12px 14px',
-							backgroundColor: '#eef2f7',
-							borderBottom: '1px solid #d9dde5',
-							fontSize: 13,
-							fontWeight: 600,
-							whiteSpace: 'nowrap',
-							textOverflow: 'ellipsis',
-							overflow: 'hidden',
-						}}
-					>
-						📄 {inferredName}
-					</div>
-					<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a6578', fontSize: 13 }}>
-						{assetIds.length} pages
-					</div>
-					<div
-						style={{
-							padding: '10px 12px',
-							borderTop: '1px solid #d9dde5',
-							backgroundColor: '#fdfdff',
-							display: 'flex',
-							justifyContent: 'space-between',
-							alignItems: 'center',
-						}}
-						onPointerDown={(e) => e.stopPropagation()}
-					>
-						<span style={{ fontSize: 12, color: '#5a6578' }}>{pageLabel}</span>
-						<button
-							onClick={(e) => {
-								e.stopPropagation()
-								setIsOpen(true)
-							}}
-							style={{
-								cursor: 'pointer',
-								fontSize: 12,
-								padding: '4px 8px',
-								borderRadius: 6,
-								border: '1px solid #c8d0dd',
-								backgroundColor: 'white',
-							}}
-						>
-							Open
-						</button>
-					</div>
+					📄 {inferredName}
 				</div>
-			)
-		}, [assetIds.length, inferredName, pageLabel])
+				<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a6578', fontSize: 13 }}>
+					{assetIds.length} pages
+				</div>
+				<div
+					style={{
+						padding: '10px 12px',
+						borderTop: '1px solid #d9dde5',
+						backgroundColor: '#fdfdff',
+						display: 'flex',
+						justifyContent: 'space-between',
+						alignItems: 'center',
+					}}
+					onPointerDown={(e) => e.stopPropagation()}
+				>
+					<span style={{ fontSize: 12, color: '#5a6578' }}>{pageLabel}</span>
+					<button
+						onClick={(e) => {
+							e.stopPropagation()
+							setIsOpen(true)
+						}}
+						style={{
+							cursor: 'pointer',
+							fontSize: 12,
+							padding: '4px 8px',
+							borderRadius: 6,
+							border: '1px solid #c8d0dd',
+							backgroundColor: 'white',
+						}}
+					>
+						Open
+					</button>
+				</div>
+			</div>
+		)
 
 		return (
 			<>
