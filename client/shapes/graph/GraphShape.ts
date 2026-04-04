@@ -13,7 +13,7 @@ export type IGraphShape = TLBaseShape<
 		yMax: number
 		color: string
 		strokeWidth: number
-		sliders: {
+		sliders?: {
 			name: string
 			value: number
 			min: number
@@ -48,5 +48,5 @@ export const graphShapeProps: RecordProps<IGraphShape> = {
 			max: T.number,
 			step: T.number,
 		})
-	),
+	).optional(),
 }

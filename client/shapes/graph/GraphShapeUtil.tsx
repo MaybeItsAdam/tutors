@@ -16,7 +16,7 @@ const INTERSECTION_CENTER_COLOR = '#0f1117'
 // Colour palette for multi-function graphs
 const CURVE_COLORS = ['#60a5fa', '#34d399', '#f97316', '#f472b6', '#a78bfa', '#facc15']
 
-type GraphSlider = IGraphShape['props']['sliders'][number]
+type GraphSlider = NonNullable<IGraphShape['props']['sliders']>[number]
 
 function isConstantName(name: string) {
 	// Constants are single-letter symbols except x/X (reserved as the graph's independent variable).
@@ -274,7 +274,8 @@ function GraphRenderer({
 	isEditing: boolean
 	editor: any
 }) {
-	const { w, h, functionStr, xMin, xMax, yMin, yMax, color, strokeWidth, sliders } = shape.props
+	const { w, h, functionStr, xMin, xMax, yMin, yMax, color, strokeWidth } = shape.props
+	const sliders = shape.props.sliders ?? []
 	const [editStr, setEditStr] = useState(functionStr)
 	const inputRef = useRef<HTMLInputElement>(null)
 
