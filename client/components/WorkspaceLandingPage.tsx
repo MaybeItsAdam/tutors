@@ -1,8 +1,6 @@
-import { Workspace, WorkspaceBranch } from '../agent/managers/WorkspaceManager'
-
-function formatTime(ts: number) {
-	return new Date(ts).toLocaleString()
-}
+import { Workspace } from '../agent/managers/WorkspaceManager'
+import { formatWorkspaceTime } from '../utils/workspaceFormat'
+import { getLatestWorkspaceSnapshot } from '../utils/workspaceSnapshot'
 
 export function WorkspaceLandingPage({
 	workspaces,
@@ -29,7 +27,7 @@ export function WorkspaceLandingPage({
 			</div>
 			<div className="workspace-landing-grid">
 				{workspaces.map((workspace) => {
-					const latest = getLatestSnapshot(workspace)
+					const latest = getLatestWorkspaceSnapshot(workspace)
 					return (
 						<button
 							key={workspace.id}
@@ -42,7 +40,7 @@ export function WorkspaceLandingPage({
 							</div>
 							{latest ? (
 								<div className="workspace-landing-card-latest">
-									Latest: {latest.snapshot.name} ({formatTime(latest.snapshot.createdAt)})
+									Latest: {latest.snapshot.name} ({formatWorkspaceTime(latest.snapshot.createdAt)})
 								</div>
 							) : (
 								<div className="workspace-landing-card-latest">No snapshots yet</div>
@@ -53,16 +51,4 @@ export function WorkspaceLandingPage({
 			</div>
 		</div>
 	)
-}
-
-function getLatestSnapshot(workspace: Workspace): { branch: WorkspaceBranch; snapshot: WorkspaceBranch['snapshots'][number] } | null {
-	let latest: { branch: WorkspaceBranch; snapshot: WorkspaceBranch['snapshots'][number] } | null = null
-	for (const branch of Object.values(workspace.branches)) {
-		for (const snapshot of branch.snapshots) {
-			if (!latest || snapshot.createdAt > latest.snapshot.createdAt) {
-				latest = { branch, snapshot }
-			}
-		}
-	}
-	return latest
 }

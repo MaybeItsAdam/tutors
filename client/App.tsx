@@ -130,6 +130,13 @@ function App() {
 		setUiView((prev) => (prev === 'editor' ? 'timeline' : 'landing'))
 	}, [])
 
+	const currentWorkspaceForTimeline = app
+		? app.workspaces
+				.getWorkspaces()
+				.find((w) => w.id === (selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId())) ??
+		  app.workspaces.getCurrentWorkspace()
+		: null
+
 	// Global hotkey: h or ? toggles the Math cheat sheet
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
@@ -283,43 +290,20 @@ function App() {
 				)}
 				{app && uiView === 'timeline' && (
 					<TldrawAgentAppContextProvider app={app}>
-						<WorkspaceTimelineView
-							workspace={
-								app.workspaces
-									.getWorkspaces()
-									.find((w) => w.id === (selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId())) ??
-								app.workspaces.getCurrentWorkspace()!
-							}
-							onContinueLatest={() => {
-								const workspace =
-									app.workspaces
-										.getWorkspaces()
-										.find(
-											(w) =>
-												w.id ===
-												(selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId())
-										) ?? app.workspaces.getCurrentWorkspace()
-								if (!workspace) return
-								let best: { branchId: string; snapshotId: string; createdAt: number } | null = null
-								for (const branch of Object.values(workspace.branches)) {
-									for (const snapshot of branch.snapshots) {
-										if (!best || snapshot.createdAt > best.createdAt) {
-											best = {
-												branchId: branch.id,
-												snapshotId: snapshot.id,
-												createdAt: snapshot.createdAt,
-											}
-										}
+						{currentWorkspaceForTimeline && (
+							<WorkspaceTimelineView
+								workspace={currentWorkspaceForTimeline}
+								onContinueLatest={() => {
+									const didRestore = app.workspaces.restoreLatestSnapshot(
+										currentWorkspaceForTimeline.id
+									)
+									if (didRestore) {
+										setUiView('editor')
 									}
-								}
-								if (best) {
-									app.workspaces.switchWorkspace(workspace.id)
-									app.workspaces.restoreSnapshot(best.branchId, best.snapshotId)
-								}
-								setUiView('editor')
-							}}
-							onOpenEditor={() => setUiView('editor')}
-						/>
+								}}
+								onOpenEditor={() => setUiView('editor')}
+							/>
+						)}
 					</TldrawAgentAppContextProvider>
 				)}
 			</div>

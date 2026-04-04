@@ -100,6 +100,28 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		return [...branch.snapshots].sort((a, b) => b.createdAt - a.createdAt)
 	}
 
+	getLatestSnapshot(workspaceId?: string): { workspaceId: string; branchId: string; snapshot: WorkspaceSnapshot } | null {
+		const targetWorkspace =
+			(workspaceId && this.$workspaces.get()[workspaceId]) ?? this.getCurrentWorkspace()
+		if (!targetWorkspace) return null
+		let latest: { workspaceId: string; branchId: string; snapshot: WorkspaceSnapshot } | null = null
+		for (const branch of Object.values(targetWorkspace.branches)) {
+			for (const snapshot of branch.snapshots) {
+				if (!latest || snapshot.createdAt > latest.snapshot.createdAt) {
+					latest = { workspaceId: targetWorkspace.id, branchId: branch.id, snapshot }
+				}
+			}
+		}
+		return latest
+	}
+
+	restoreLatestSnapshot(workspaceId?: string): boolean {
+		const latest = this.getLatestSnapshot(workspaceId)
+		if (!latest) return false
+		if (!this.switchWorkspace(latest.workspaceId)) return false
+		return this.restoreSnapshot(latest.branchId, latest.snapshot.id)
+	}
+
 	loadState() {
 		const persisted = this.loadPersistedState()
 		if (!persisted) {

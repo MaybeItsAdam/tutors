@@ -1,8 +1,6 @@
-import { Workspace, WorkspaceBranch } from '../agent/managers/WorkspaceManager'
-
-function formatTime(ts: number) {
-	return new Date(ts).toLocaleString()
-}
+import { Workspace } from '../agent/managers/WorkspaceManager'
+import { formatWorkspaceTime } from '../utils/workspaceFormat'
+import { getLatestWorkspaceSnapshot } from '../utils/workspaceSnapshot'
 
 export function WorkspaceTimelineView({
 	workspace,
@@ -14,7 +12,7 @@ export function WorkspaceTimelineView({
 	onOpenEditor: () => void
 }) {
 	const branches = Object.values(workspace.branches).sort((a, b) => a.createdAt - b.createdAt)
-	const latest = getLatestSnapshot(workspace)
+	const latest = getLatestWorkspaceSnapshot(workspace)
 	return (
 		<div className="workspace-screen">
 			<div className="workspace-screen-header">
@@ -35,7 +33,9 @@ export function WorkspaceTimelineView({
 							{branch.name}
 							{workspace.currentBranchId === branch.id ? ' (current)' : ''}
 						</div>
-						<div className="workspace-timeline-branch-meta">Updated {formatTime(branch.updatedAt)}</div>
+						<div className="workspace-timeline-branch-meta">
+							Updated {formatWorkspaceTime(branch.updatedAt)}
+						</div>
 						<div className="workspace-timeline-snapshots">
 							{[...branch.snapshots]
 								.sort((a, b) => b.createdAt - a.createdAt)
@@ -45,7 +45,7 @@ export function WorkspaceTimelineView({
 											{snapshot.name} {snapshot.isAuto ? '(auto)' : ''}
 										</div>
 										<div className="workspace-timeline-snapshot-meta">
-											{formatTime(snapshot.createdAt)}
+											{formatWorkspaceTime(snapshot.createdAt)}
 											{snapshot.parentSnapshotId ? ' · forked' : ''}
 											{snapshot.mergedFromBranchId ? ' · merged' : ''}
 										</div>
@@ -57,16 +57,4 @@ export function WorkspaceTimelineView({
 			</div>
 		</div>
 	)
-}
-
-function getLatestSnapshot(workspace: Workspace): { branch: WorkspaceBranch; snapshot: WorkspaceBranch['snapshots'][number] } | null {
-	let latest: { branch: WorkspaceBranch; snapshot: WorkspaceBranch['snapshots'][number] } | null = null
-	for (const branch of Object.values(workspace.branches)) {
-		for (const snapshot of branch.snapshots) {
-			if (!latest || snapshot.createdAt > latest.snapshot.createdAt) {
-				latest = { branch, snapshot }
-			}
-		}
-	}
-	return latest
 }
