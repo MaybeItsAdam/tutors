@@ -8,10 +8,9 @@ import {
 	TLComponents,
 	Tldraw,
 	TldrawOverlays,
-	TldrawUiMenuItem,
+	TldrawUiMenuToolItem,
 	TldrawUiToastsProvider,
 	TLUiOverrides,
-	useTools,
 } from 'tldraw'
 import { TldrawAgentApp } from './agent/TldrawAgentApp'
 import {
@@ -86,12 +85,11 @@ const overrides: TLUiOverrides = {
 
 // Custom toolbar with Math and Graph buttons appended
 function CustomToolbar() {
-	const tools = useTools()
 	return (
 		<DefaultToolbar>
 			<DefaultToolbarContent />
-			<TldrawUiMenuItem {...tools['math']} />
-			<TldrawUiMenuItem {...tools['graph']} />
+			<TldrawUiMenuToolItem toolId="math" />
+			<TldrawUiMenuToolItem toolId="graph" />
 		</DefaultToolbar>
 	)
 }
