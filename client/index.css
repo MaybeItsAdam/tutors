@@ -65,7 +65,7 @@ body {
 	inset: 0;
 	z-index: 1100;
 	background: #ffffff;
-	padding: 80px 392px 32px 32px;
+	padding: 80px max(32px, min(40vw, 392px)) 32px 32px;
 	overflow: auto;
 }
 
