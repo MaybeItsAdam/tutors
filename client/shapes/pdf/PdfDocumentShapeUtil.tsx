@@ -7,7 +7,7 @@ import {
 	TLImageShape,
 	useEditor
 } from 'tldraw'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { IPdfDocumentShape, pdfDocumentShapeProps } from './PdfDocumentShape'
 import {
 	PDF_DEFAULT_NAME,
@@ -30,6 +30,12 @@ import {
 	PDF_SHAPE_DEFAULT_H,
 	PDF_SHAPE_DEFAULT_W,
 	PDF_THUMBNAIL_H,
+	PDF_THUMBNAIL_CONTAINER_H_PADDING,
+	PDF_THUMBNAIL_CONTAINER_MAX_H,
+	PDF_THUMBNAIL_CONTAINER_MAX_W,
+	PDF_THUMBNAIL_CONTAINER_MIN_H,
+	PDF_THUMBNAIL_CONTAINER_MIN_W,
+	PDF_THUMBNAIL_CONTAINER_W_PADDING,
 	PDF_THUMBNAIL_W,
 } from './PdfConstants'
 
@@ -66,8 +72,14 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const isOpen = Boolean(shapeMeta.pdfPopupOpen)
 		const maxPageIndex = assetIds.length - 1
 		const safeCurrentPage = maxPageIndex < 0 ? 0 : Math.min(Math.max(currentPage, 0), maxPageIndex)
-		const thumbnailContainerW = Math.max(72, Math.min(shape.props.w - 20, 220))
-		const thumbnailContainerH = Math.max(92, Math.min(shape.props.h - 58, 300))
+		const thumbnailContainerW = Math.max(
+			PDF_THUMBNAIL_CONTAINER_MIN_W,
+			Math.min(shape.props.w - PDF_THUMBNAIL_CONTAINER_W_PADDING, PDF_THUMBNAIL_CONTAINER_MAX_W)
+		)
+		const thumbnailContainerH = Math.max(
+			PDF_THUMBNAIL_CONTAINER_MIN_H,
+			Math.min(shape.props.h - PDF_THUMBNAIL_CONTAINER_H_PADDING, PDF_THUMBNAIL_CONTAINER_MAX_H)
+		)
 		const [popupRect, setPopupRect] = useState({
 			left: PDF_POPUP_DEFAULT_LEFT,
 			top: PDF_POPUP_DEFAULT_TOP,
@@ -165,7 +177,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				},
 			})
 		}
-		const closePopup = () => {
+		const closePopup = useCallback(() => {
 			editor.updateShape<IPdfDocumentShape>({
 				id: shape.id,
 				type: 'pdf',
@@ -174,7 +186,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 					pdfPopupOpen: false,
 				},
 			})
-		}
+		}, [editor, shape.id, shapeMeta])
 
 		useEffect(() => {
 			if (!isOpen) return
