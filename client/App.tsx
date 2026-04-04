@@ -83,13 +83,13 @@ const overrides: TLUiOverrides = {
 	},
 }
 
-// Custom toolbar with Math and Graph buttons appended
+// Custom toolbar with Math and Graph buttons pinned before default items
 function CustomToolbar() {
 	return (
 		<DefaultToolbar>
-			<DefaultToolbarContent />
 			<TldrawUiMenuToolItem toolId="math" />
 			<TldrawUiMenuToolItem toolId="graph" />
+			<DefaultToolbarContent />
 		</DefaultToolbar>
 	)
 }
