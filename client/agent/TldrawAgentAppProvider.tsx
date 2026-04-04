@@ -2,6 +2,7 @@ import { createContext, memo, ReactNode, useCallback, useContext, useEffect, use
 import { useEditor, useToasts, useValue } from 'tldraw'
 import { TldrawAgent } from './TldrawAgent'
 import { TldrawAgentApp } from './TldrawAgentApp'
+import { Workspace, WorkspaceBranch } from './managers/WorkspaceManager'
 
 const TldrawAgentAppContext = createContext<TldrawAgentApp | null>(null)
 
@@ -78,10 +79,10 @@ export const TldrawAgentAppProvider = memo(function TldrawAgentAppProvider({
 	useEffect(() => {
 		const instance = new TldrawAgentApp(editor, { onError: handleError })
 
-		// Load persisted state first (this will create agents from persisted data)
-		instance.persistence.loadState()
+		// Load persisted workspace state first.
+		instance.workspaces.loadState()
 
-		// Ensure at least one agent exists (creates one if none were loaded)
+		// Ensure at least one agent exists (safety for legacy/empty state)
 		const defaultAgent = instance.agents.ensureAtLeastOneAgent()
 
 		// Start auto-saving (must be after loadState to avoid saving during load)
@@ -210,4 +211,19 @@ export function useAgent(): TldrawAgent {
 export function useAgents(): TldrawAgent[] {
 	const app = useTldrawAgentApp()
 	return useValue('agents', () => app.agents.getAgents(), [app])
+}
+
+export function useWorkspaces(): Workspace[] {
+	const app = useTldrawAgentApp()
+	return useValue('workspaces', () => app.workspaces.getWorkspaces(), [app])
+}
+
+export function useCurrentWorkspace(): Workspace | null {
+	const app = useTldrawAgentApp()
+	return useValue('currentWorkspace', () => app.workspaces.getCurrentWorkspace(), [app])
+}
+
+export function useCurrentBranch(): WorkspaceBranch | null {
+	const app = useTldrawAgentApp()
+	return useValue('currentBranch', () => app.workspaces.getCurrentBranch(), [app])
 }

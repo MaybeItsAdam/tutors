@@ -98,6 +98,28 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	}
 
 	/**
+	 * Load a provided app state directly.
+	 * Creates agents for all state IDs that don't already exist.
+	 */
+	loadAppState(appState: PersistedAppState) {
+		this.isLoadingState = true
+		try {
+			for (const agentId of Object.keys(appState.agents)) {
+				this.app.agents.createAgent(agentId)
+			}
+			const agents = this.app.agents.getAgents()
+			agents.forEach((agent) => {
+				const agentState = appState.agents[agent.id]
+				if (agentState) {
+					agent.loadState(agentState)
+				}
+			})
+		} finally {
+			this.isLoadingState = false
+		}
+	}
+
+	/**
 	 * Start auto-saving app state changes.
 	 * Call this after loadState() to avoid saving during load.
 	 * Reactively watches the agents list and all agent state.
