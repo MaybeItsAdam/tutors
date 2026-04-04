@@ -1,11 +1,17 @@
 import { evaluate } from 'mathjs'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { HTMLContainer, Rectangle2d, ShapeUtil, useEditor, useValue } from 'tldraw'
 import { IEquationShape } from '../equation/EquationShape'
 import { graphShapeProps, IGraphShape } from './GraphShape'
 import { latexToMathjsLines } from '../../utils/latexToMathjs'
 
 const SAMPLES = 400
+const INTERSECTION_EPSILON = 1e-3
+const INTERSECTION_THRESHOLD_DIVISOR = 2
+const INTERSECTION_DUPLICATE_X_FACTOR = 0.5
+const INTERSECTION_DUPLICATE_Y_FACTOR = 2
+const INTERSECTION_OUTER_COLOR = '#f8fafc'
+const INTERSECTION_CENTER_COLOR = '#0f1117'
 
 // Colour palette for multi-function graphs
 const CURVE_COLORS = ['#60a5fa', '#34d399', '#f97316', '#f472b6', '#a78bfa', '#facc15']
@@ -51,16 +57,20 @@ function mergeSliders(expressions: string[], existing: GraphSlider[]): GraphSlid
 		})
 }
 
-function expressionScope(x: number, sliders: GraphSlider[]) {
-	const scope: Record<string, number> = { x }
+function expressionScope(sliders: GraphSlider[]) {
+	const scope: Record<string, number> = {}
 	for (const slider of sliders) {
 		scope[slider.name] = slider.value
 	}
 	return scope
 }
 
-function evaluateExpression(expr: string, x: number, sliders: GraphSlider[]) {
-	return evaluate(expr, expressionScope(x, sliders))
+function createExpressionEvaluator(sliders: GraphSlider[]) {
+	const scope = expressionScope(sliders)
+	return (expr: string, x: number) => {
+		scope.x = x
+		return evaluate(expr, scope)
+	}
 }
 
 function findIntersections(
@@ -72,7 +82,10 @@ function findIntersections(
 	const intersections: { x: number; y: number; colorA: string; colorB: string }[] = []
 	const steps = SAMPLES
 	const dx = (xMax - xMin) / steps
-	const threshold = Math.max(1e-3, dx / 2)
+	// Keep root and de-dup tolerances proportional to sample spacing to reduce flicker
+	// while still catching near-tangent intersections.
+	const threshold = Math.max(INTERSECTION_EPSILON, dx / INTERSECTION_THRESHOLD_DIVISOR)
+	const evaluateExpression = createExpressionEvaluator(sliders)
 
 	const rootBetween = (diffA: number, diffB: number, xa: number, xb: number) => {
 		if (Math.abs(diffA) < 1e-8) return xa
@@ -93,8 +106,8 @@ function findIntersections(
 				let d0: number
 				let d1: number
 				try {
-					d0 = evaluateExpression(a.expr, x0, sliders) - evaluateExpression(b.expr, x0, sliders)
-					d1 = evaluateExpression(a.expr, x1, sliders) - evaluateExpression(b.expr, x1, sliders)
+					d0 = evaluateExpression(a.expr, x0) - evaluateExpression(b.expr, x0)
+					d1 = evaluateExpression(a.expr, x1) - evaluateExpression(b.expr, x1)
 					if (!isFinite(d0) || !isFinite(d1)) continue
 				} catch {
 					continue
@@ -105,14 +118,16 @@ function findIntersections(
 				const xRoot = rootBetween(d0, d1, x0, x1)
 				let yRoot: number
 				try {
-					yRoot = evaluateExpression(a.expr, xRoot, sliders)
+					yRoot = evaluateExpression(a.expr, xRoot)
 					if (!isFinite(yRoot)) continue
 				} catch {
 					continue
 				}
 
 				const duplicate = intersections.some(
-					(point) => Math.abs(point.x - xRoot) < dx * 0.5 && Math.abs(point.y - yRoot) < threshold * 2
+					(point) =>
+						Math.abs(point.x - xRoot) < dx * INTERSECTION_DUPLICATE_X_FACTOR &&
+						Math.abs(point.y - yRoot) < threshold * INTERSECTION_DUPLICATE_Y_FACTOR
 				)
 				if (duplicate) continue
 
@@ -206,7 +221,7 @@ export class GraphShapeUtil extends ShapeUtil<IGraphShape> {
 
 function buildPath(
 	functionStr: string,
-	sliders: GraphSlider[],
+	evaluateExpression: (expr: string, x: number) => number,
 	xMin: number,
 	xMax: number,
 	yMin: number,
@@ -225,7 +240,7 @@ function buildPath(
 		const x = xMin + i * step
 		let y: number
 		try {
-			y = evaluateExpression(functionStr, x, sliders)
+			y = evaluateExpression(functionStr, x)
 			if (!isFinite(y)) {
 				penUp = true
 				continue
@@ -261,7 +276,6 @@ function GraphRenderer({
 	const { w, h, functionStr, xMin, xMax, yMin, yMax, color, strokeWidth, sliders } = shape.props
 	const [editStr, setEditStr] = useState(functionStr)
 	const inputRef = useRef<HTMLInputElement>(null)
-	const hasInitializedSlidersRef = useRef(false)
 
 	const toSvgX = (x: number) => ((x - xMin) / (xMax - xMin)) * w
 	const toSvgY = (y: number) => h - ((y - yMin) / (yMax - yMin)) * h
@@ -303,19 +317,16 @@ function GraphRenderer({
 			: [{ expr: functionStr, label: functionStr, color }]
 
 	const expectedSliders = mergeSliders(functionsToPlot.map((fn) => fn.expr), sliders)
-	const needsInitialization = !hasInitializedSlidersRef.current
 	const slidersDiffer = !areSlidersEqual(expectedSliders, sliders)
-	if (needsInitialization || slidersDiffer) {
-		hasInitializedSlidersRef.current = true
-		if (slidersDiffer) {
-			editor.updateShape({
-				id: shape.id,
-				type: 'graph',
-				props: { sliders: expectedSliders },
-			})
-		}
+	if (slidersDiffer) {
+		editor.updateShape({
+			id: shape.id,
+			type: 'graph',
+			props: { sliders: expectedSliders },
+		})
 	}
 
+	const evaluateExpression = useMemo(() => createExpressionEvaluator(sliders), [sliders])
 	const intersections = findIntersections(functionsToPlot, sliders, xMin, xMax)
 
 	const handleInputKeyDown = (e: React.KeyboardEvent) => {
@@ -375,7 +386,7 @@ function GraphRenderer({
 				{functionsToPlot.map((fn, i) => (
 					<path
 						key={i}
-						d={buildPath(fn.expr, sliders, xMin, xMax, yMin, yMax, w, h)}
+						d={buildPath(fn.expr, evaluateExpression, xMin, xMax, yMin, yMax, w, h)}
 						fill="none"
 						stroke={fn.color}
 						strokeWidth={strokeWidth}
@@ -393,8 +404,8 @@ function GraphRenderer({
 								cx={toSvgX(p.x)}
 								cy={toSvgY(p.y)}
 								r={4}
-								fill="#0f1117"
-								stroke="#f8fafc"
+								fill={INTERSECTION_CENTER_COLOR}
+								stroke={INTERSECTION_OUTER_COLOR}
 								strokeWidth={1.5}
 							/>
 							<circle
