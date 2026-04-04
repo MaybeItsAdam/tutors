@@ -7,7 +7,7 @@ import {
 	TLImageShape,
 	useEditor
 } from 'tldraw'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { IPdfDocumentShape, pdfDocumentShapeProps } from './PdfDocumentShape'
 import {
 	PDF_DEFAULT_NAME,
@@ -15,10 +15,18 @@ import {
 	PDF_EXTRACTED_PAGE_W,
 	PDF_FALLBACK_ICON_COLOR,
 	PDF_FALLBACK_ICON_SIZE,
+	PDF_POPUP_DEFAULT_H,
+	PDF_POPUP_DEFAULT_LEFT,
+	PDF_POPUP_DEFAULT_TOP,
+	PDF_POPUP_DEFAULT_W,
+	PDF_POPUP_MIN_H,
+	PDF_POPUP_MIN_POSITION,
+	PDF_POPUP_MIN_W,
 	PDF_OVERLAY_Z_INDEX,
 	PDF_PAGE_SUFFIX_PATTERN,
 	PDF_POPUP_OVERLAY_BG,
 	PDF_POPUP_TITLE_MAX_WIDTH,
+	PDF_POPUP_VIEWPORT_MARGIN,
 	PDF_SHAPE_DEFAULT_H,
 	PDF_SHAPE_DEFAULT_W,
 	PDF_THUMBNAIL_H,
@@ -58,7 +66,12 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const isOpen = Boolean(shapeMeta.pdfPopupOpen)
 		const maxPageIndex = assetIds.length - 1
 		const safeCurrentPage = maxPageIndex < 0 ? 0 : Math.min(Math.max(currentPage, 0), maxPageIndex)
-		const [popupRect, setPopupRect] = useState({ left: 80, top: 60, width: 960, height: 720 })
+		const [popupRect, setPopupRect] = useState({
+			left: PDF_POPUP_DEFAULT_LEFT,
+			top: PDF_POPUP_DEFAULT_TOP,
+			width: PDF_POPUP_DEFAULT_W,
+			height: PDF_POPUP_DEFAULT_H,
+		})
 		const dragStateRef = useRef<{ pointerId: number; startX: number; startY: number; startLeft: number; startTop: number } | null>(null)
 		const resizeStateRef = useRef<{ pointerId: number; startX: number; startY: number; startW: number; startH: number } | null>(null)
 
@@ -162,32 +175,21 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		}
 
 		useEffect(() => {
-			if (!isOpen) return
-			const onKeyDown = (e: KeyboardEvent) => {
-				if (e.key === 'Escape') {
-					closePopup()
-				}
-			}
-			window.addEventListener('keydown', onKeyDown)
-			return () => window.removeEventListener('keydown', onKeyDown)
-		}, [isOpen])
-
-		useEffect(() => {
 			const onMove = (e: PointerEvent) => {
 				const dragState = dragStateRef.current
 				const resizeState = resizeStateRef.current
 				if (dragState) {
 					setPopupRect((current) => ({
 						...current,
-						left: Math.max(8, dragState.startLeft + (e.clientX - dragState.startX)),
-						top: Math.max(8, dragState.startTop + (e.clientY - dragState.startY)),
+						left: Math.max(PDF_POPUP_MIN_POSITION, dragState.startLeft + (e.clientX - dragState.startX)),
+						top: Math.max(PDF_POPUP_MIN_POSITION, dragState.startTop + (e.clientY - dragState.startY)),
 					}))
 				}
 				if (resizeState) {
 					setPopupRect((current) => ({
 						...current,
-						width: Math.max(420, resizeState.startW + (e.clientX - resizeState.startX)),
-						height: Math.max(320, resizeState.startH + (e.clientY - resizeState.startY)),
+						width: Math.max(PDF_POPUP_MIN_W, resizeState.startW + (e.clientX - resizeState.startX)),
+						height: Math.max(PDF_POPUP_MIN_H, resizeState.startH + (e.clientY - resizeState.startY)),
 					}))
 				}
 			}
@@ -325,8 +327,8 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 								position: 'fixed',
 								left: popupRect.left,
 								top: popupRect.top,
-								width: `min(${popupRect.width}px, calc(100vw - 16px))`,
-								height: `min(${popupRect.height}px, calc(100vh - 16px))`,
+								width: `min(${popupRect.width}px, calc(100vw - ${PDF_POPUP_VIEWPORT_MARGIN}px))`,
+								height: `min(${popupRect.height}px, calc(100vh - ${PDF_POPUP_VIEWPORT_MARGIN}px))`,
 								backgroundColor: 'white',
 								borderRadius: 12,
 								boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
@@ -392,9 +394,10 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 									</button>
 									<button
 										onClick={closePopup}
+										aria-label="Close PDF viewer"
 										style={{ cursor: 'pointer', padding: '4px 8px', border: '1px solid #ced4da', borderRadius: 4, backgroundColor: '#fff' }}
 									>
-										Close
+										Close (Esc)
 									</button>
 								</div>
 							</div>
