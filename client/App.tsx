@@ -8,10 +8,9 @@ import {
 	TLComponents,
 	Tldraw,
 	TldrawOverlays,
-	TldrawUiMenuItem,
+	TldrawUiMenuToolItem,
 	TldrawUiToastsProvider,
 	TLUiOverrides,
-	useTools,
 } from 'tldraw'
 import { TldrawAgentApp } from './agent/TldrawAgentApp'
 import {
@@ -40,6 +39,33 @@ DefaultSizeStyle.setDefaultValue('s')
 // Custom tools for picking context items
 const tools = [TargetShapeTool, TargetAreaTool, MathTool, GraphTool]
 const shapeUtils = [EquationShapeUtil, GraphShapeUtil, PdfDocumentShapeUtil]
+const PINNED_CUSTOM_TOOLS_STORAGE_KEY = 'tutors.pinned-toolbar-tools'
+const PINNABLE_CUSTOM_TOOL_IDS = ['math', 'graph', 'target-area', 'target-shape'] as const
+const DEFAULT_PINNED_CUSTOM_TOOL_IDS: string[] = ['math']
+
+function getPinnedCustomToolIds(): string[] {
+	if (typeof window === 'undefined') return DEFAULT_PINNED_CUSTOM_TOOL_IDS
+
+	const parse = (raw: string | null): string[] | null => {
+		if (!raw) return null
+		const parsed = raw
+			.split(',')
+			.map((id) => id.trim())
+			.filter((id): id is (typeof PINNABLE_CUSTOM_TOOL_IDS)[number] =>
+				(PINNABLE_CUSTOM_TOOL_IDS as readonly string[]).includes(id)
+			)
+		return parsed.length ? parsed : null
+	}
+
+	const fromQuery = parse(new URLSearchParams(window.location.search).get('pinnedTools'))
+	if (fromQuery) return fromQuery
+
+	const fromStorage = parse(window.localStorage.getItem(PINNED_CUSTOM_TOOLS_STORAGE_KEY))
+	if (fromStorage) return fromStorage
+
+	return DEFAULT_PINNED_CUSTOM_TOOL_IDS
+}
+
 const overrides: TLUiOverrides = {
 	tools: (editor, tools) => {
 		return {
@@ -84,14 +110,16 @@ const overrides: TLUiOverrides = {
 	},
 }
 
-// Custom toolbar with Math and Graph buttons appended
-function CustomToolbar() {
-	const tools = useTools()
+// Custom toolbar with user-configurable custom tool pins before default items.
+// Set localStorage["tutors.pinned-toolbar-tools"] = "math,graph,target-area,target-shape"
+// or use ?pinnedTools=math,target-area in the URL.
+function CustomToolbar({ pinnedToolIds }: { pinnedToolIds: string[] }) {
 	return (
 		<DefaultToolbar>
+			{pinnedToolIds.map((toolId) => (
+				<TldrawUiMenuToolItem key={toolId} toolId={toolId} />
+			))}
 			<DefaultToolbarContent />
-			<TldrawUiMenuItem {...tools['math']} />
-			<TldrawUiMenuItem {...tools['graph']} />
 		</DefaultToolbar>
 	)
 }
@@ -117,6 +145,7 @@ function OffsetStylePanel() {
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
 	const [showCheatSheet, setShowCheatSheet] = useState(false)
+	const pinnedToolIds = useMemo(() => getPinnedCustomToolIds(), [])
 
 	const handleUnmount = useCallback(() => {
 		setApp(null)
@@ -141,7 +170,7 @@ function App() {
 	// These use TldrawAgentAppContextProvider to access the app/agent
 	const components: TLComponents = useMemo(() => {
 		return {
-			Toolbar: CustomToolbar,
+			Toolbar: () => <CustomToolbar pinnedToolIds={pinnedToolIds} />,
 			StylePanel: OffsetStylePanel,
 			HelperButtons: () =>
 				app && (
@@ -162,7 +191,7 @@ function App() {
 				</>
 			),
 		}
-	}, [app])
+	}, [app, pinnedToolIds])
 
 	return (
 		<TldrawUiToastsProvider>

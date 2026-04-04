@@ -7,7 +7,7 @@ export class MathTool extends StateNode {
 		return [MathIdle]
 	}
 
-	override isLockable = false
+	override isLockable = true
 
 	override onEnter() {
 		this.editor.setCursor({ type: 'cross', rotation: 0 })
@@ -15,18 +15,6 @@ export class MathTool extends StateNode {
 
 	override onExit() {
 		this.editor.setCursor({ type: 'default', rotation: 0 })
-	}
-
-	override onInterrupt() {
-		this.complete()
-	}
-
-	override onCancel() {
-		this.complete()
-	}
-
-	private complete() {
-		this.parent.transition('select', {})
 	}
 }
 
@@ -52,7 +40,6 @@ class MathIdle extends StateNode {
 
 		// Select the shape and set it to editing mode immediately
 		this.editor.select(id)
-		this.editor.setCurrentTool('select')
 		this.editor.setEditingShape(id)
 	}
 }
