@@ -18,8 +18,9 @@ export const PDF_POPUP_MIN_W = 420
 export const PDF_POPUP_MIN_H = 320
 export const PDF_POPUP_DEFAULT_LEFT = 80
 export const PDF_POPUP_DEFAULT_TOP = 60
-export const PDF_POPUP_DEFAULT_W = 960
-export const PDF_POPUP_DEFAULT_H = 720
+export const PDF_POPUP_DEFAULT_W = 760
+export const PDF_POPUP_DEFAULT_H = 540
+export const PDF_POPUP_Z_INDEX = 1000000
 export const PDF_PLACEMENT_CASCADE_OFFSET = 24
 export const PDF_PLACEMENT_VIEWPORT_TOP_OFFSET = 40
 

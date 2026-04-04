@@ -22,11 +22,11 @@ import {
 	PDF_POPUP_MIN_H,
 	PDF_POPUP_MIN_POSITION,
 	PDF_POPUP_MIN_W,
-	PDF_OVERLAY_Z_INDEX,
 	PDF_PAGE_SUFFIX_PATTERN,
 	PDF_POPUP_OVERLAY_BG,
 	PDF_POPUP_TITLE_MAX_WIDTH,
 	PDF_POPUP_VIEWPORT_MARGIN,
+	PDF_POPUP_Z_INDEX,
 	PDF_SHAPE_DEFAULT_H,
 	PDF_SHAPE_DEFAULT_W,
 	PDF_THUMBNAIL_H,
@@ -66,6 +66,8 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const isOpen = Boolean(shapeMeta.pdfPopupOpen)
 		const maxPageIndex = assetIds.length - 1
 		const safeCurrentPage = maxPageIndex < 0 ? 0 : Math.min(Math.max(currentPage, 0), maxPageIndex)
+		const thumbnailContainerW = Math.max(72, Math.min(shape.props.w - 20, 220))
+		const thumbnailContainerH = Math.max(92, Math.min(shape.props.h - 58, 300))
 		const [popupRect, setPopupRect] = useState({
 			left: PDF_POPUP_DEFAULT_LEFT,
 			top: PDF_POPUP_DEFAULT_TOP,
@@ -175,6 +177,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		}
 
 		useEffect(() => {
+			if (!isOpen) return
 			const onMove = (e: PointerEvent) => {
 				const dragState = dragStateRef.current
 				const resizeState = resizeStateRef.current
@@ -193,17 +196,22 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 					}))
 				}
 			}
+			const onKeyDown = (e: KeyboardEvent) => {
+				if (e.key === 'Escape') closePopup()
+			}
 			const onUp = (e: PointerEvent) => {
 				if (dragStateRef.current?.pointerId === e.pointerId) dragStateRef.current = null
 				if (resizeStateRef.current?.pointerId === e.pointerId) resizeStateRef.current = null
 			}
 			window.addEventListener('pointermove', onMove)
 			window.addEventListener('pointerup', onUp)
+			window.addEventListener('keydown', onKeyDown)
 			return () => {
 				window.removeEventListener('pointermove', onMove)
 				window.removeEventListener('pointerup', onUp)
+				window.removeEventListener('keydown', onKeyDown)
 			}
-		}, [])
+		}, [isOpen, closePopup])
 		const documentFace = (
 			<div
 				style={{
@@ -218,8 +226,8 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 			>
 				<div
 					style={{
-						width: 112,
-						height: 142,
+						width: thumbnailContainerW,
+						height: thumbnailContainerH,
 						display: 'flex',
 						alignItems: 'center',
 						justifyContent: 'center',
@@ -236,9 +244,9 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 							src={asset.props.src}
 							alt={inferredName}
 							style={{
-								width: PDF_THUMBNAIL_W,
-								height: PDF_THUMBNAIL_H,
-								objectFit: 'cover',
+								maxWidth: '100%',
+								maxHeight: '100%',
+								objectFit: 'contain',
 								borderRadius: 4,
 							}}
 							draggable={false}
@@ -314,13 +322,18 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 						style={{
 							position: 'fixed',
 							inset: 0,
-							zIndex: PDF_OVERLAY_Z_INDEX,
+							zIndex: PDF_POPUP_Z_INDEX,
 							backgroundColor: PDF_POPUP_OVERLAY_BG,
-							display: 'flex',
-							alignItems: 'center',
-							justifyContent: 'center',
+							pointerEvents: 'all',
+							touchAction: 'none',
 						}}
-						onPointerDown={closePopup}
+						onPointerDown={(e) => {
+							e.stopPropagation()
+							closePopup()
+						}}
+						onClick={(e) => {
+							e.stopPropagation()
+						}}
 					>
 						<div
 							style={{
