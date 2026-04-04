@@ -1,6 +1,7 @@
 import { Atom, atom, structuredClone, TLEditorSnapshot, uniqueId } from 'tldraw'
 import { PersistedAppState } from './AgentAppPersistenceManager'
 import { BaseAgentAppManager } from './BaseAgentAppManager'
+import { formatWorkspaceTime } from '../../utils/workspaceFormat'
 
 const STORAGE_KEY = 'tldraw-agent-app:workspaces:v1'
 const AUTO_SNAPSHOT_CHECK_INTERVAL_MS = 30_000
@@ -604,7 +605,7 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		const now = Date.now()
 		const last = workspace.lastAutoSnapshotAt ?? 0
 		if (now - last < intervalMinutes * MS_PER_MINUTE) return
-		this.createSnapshot(`Auto ${new Date(now).toLocaleString()}`, { isAuto: true })
+		this.createSnapshot(`Auto ${formatWorkspaceTime(now)}`, { isAuto: true })
 	}
 
 	private startTimers() {

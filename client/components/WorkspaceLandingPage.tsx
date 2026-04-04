@@ -18,7 +18,13 @@ export function WorkspaceLandingPage({
 				<button
 					className="workspace-screen-primary"
 					onClick={() => {
-						const n = workspaces.length + 1
+						const usedNums = workspaces
+							.map((workspace) => {
+								const match = workspace.name.match(/^Workspace\s+(\d+)$/)
+								return match ? Number(match[1]) : null
+							})
+							.filter((v): v is number => v !== null)
+						const n = (usedNums.length ? Math.max(...usedNums) : 0) + 1
 						onCreateWorkspace(`Workspace ${n}`)
 					}}
 				>
