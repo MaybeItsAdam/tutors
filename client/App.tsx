@@ -34,7 +34,9 @@ import { EquationShapeUtil } from './shapes/equation/EquationShapeUtil'
 import { GraphShapeUtil } from './shapes/graph/GraphShapeUtil'
 import { PdfDocumentShapeUtil } from './shapes/pdf/PdfDocumentShapeUtil'
 import {
-	PDF_PAGE_SUFFIX_TEXT,
+	buildPdfPageAssetName,
+	PDF_PLACEMENT_CASCADE_OFFSET,
+	PDF_PLACEMENT_VIEWPORT_TOP_OFFSET,
 	PDF_SHAPE_DEFAULT_H,
 	PDF_SHAPE_DEFAULT_W,
 } from './shapes/pdf/PdfConstants'
@@ -64,7 +66,7 @@ async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y:
 			props: {
 				w: page.width,
 				h: page.height,
-				name: `${file.name}${PDF_PAGE_SUFFIX_TEXT}${page.pageNumber}`,
+				name: buildPdfPageAssetName(file.name, page.pageNumber),
 				isAnimated: false,
 				mimeType: 'image/png',
 				src: page.dataUrl,
@@ -185,12 +187,18 @@ function App() {
 		if (!editor || !files?.length) return
 
 		const viewport = editor.getViewportPageBounds()
-		const origin = { x: viewport.x + viewport.w / 2 - PDF_SHAPE_DEFAULT_W / 2, y: viewport.y + 40 }
+		const origin = {
+			x: viewport.x + viewport.w / 2 - PDF_SHAPE_DEFAULT_W / 2,
+			y: viewport.y + PDF_PLACEMENT_VIEWPORT_TOP_OFFSET,
+		}
 
 		for (let i = 0; i < files.length; i++) {
 			const file = files[i]
 			try {
-				await addPdfToCanvas(editor, file, { x: origin.x + i * 24, y: origin.y + i * 24 })
+				await addPdfToCanvas(editor, file, {
+					x: origin.x + i * PDF_PLACEMENT_CASCADE_OFFSET,
+					y: origin.y + i * PDF_PLACEMENT_CASCADE_OFFSET,
+				})
 			} catch (err) {
 				console.error('Failed to process PDF upload', err)
 			}
@@ -276,7 +284,10 @@ function App() {
 
 								for (let i = 0; i < files.length; i++) {
 									try {
-										await addPdfToCanvas(editor, files[i], { x: point.x + i * 24, y: point.y + i * 24 })
+										await addPdfToCanvas(editor, files[i], {
+											x: point.x + i * PDF_PLACEMENT_CASCADE_OFFSET,
+											y: point.y + i * PDF_PLACEMENT_CASCADE_OFFSET,
+										})
 									} catch (err) {
 										console.error('Failed to process PDF', err)
 									}

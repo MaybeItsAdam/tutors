@@ -9,11 +9,24 @@ import {
 } from 'tldraw'
 import { IPdfDocumentShape, pdfDocumentShapeProps } from './PdfDocumentShape'
 import {
+	PDF_DEFAULT_NAME,
+	PDF_EXTRACTED_PAGE_H,
+	PDF_EXTRACTED_PAGE_W,
+	PDF_FALLBACK_ICON_COLOR,
+	PDF_FALLBACK_ICON_SIZE,
 	PDF_OVERLAY_Z_INDEX,
 	PDF_PAGE_SUFFIX_PATTERN,
+	PDF_POPUP_OVERLAY_BG,
+	PDF_POPUP_TITLE_MAX_WIDTH,
 	PDF_SHAPE_DEFAULT_H,
 	PDF_SHAPE_DEFAULT_W,
+	PDF_THUMBNAIL_H,
+	PDF_THUMBNAIL_W,
 } from './PdfConstants'
+
+type PdfShapeMeta = {
+	pdfPopupOpen?: boolean
+}
 
 export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 	static override type = 'pdf' as const
@@ -35,7 +48,8 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 	override component(shape: IPdfDocumentShape) {
 		const editor = useEditor()
 		const { assetIds, currentPage } = shape.props
-		const isOpen = Boolean((shape.meta as Record<string, unknown> | undefined)?.pdfPopupOpen)
+		const shapeMeta = (shape.meta as PdfShapeMeta | undefined) ?? {}
+		const isOpen = Boolean(shapeMeta.pdfPopupOpen)
 		const safeCurrentPage = Math.min(currentPage, Math.max(0, assetIds.length - 1))
 
 		if (!assetIds.length) {
@@ -57,7 +71,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 			? PDF_PAGE_SUFFIX_PATTERN.test(firstAssetName)
 				? firstAssetName.replace(PDF_PAGE_SUFFIX_PATTERN, '')
 				: firstAssetName
-			: 'Document.pdf'
+			: PDF_DEFAULT_NAME
 
 		const handlePrev = (e: React.MouseEvent) => {
 			e.stopPropagation()
@@ -92,8 +106,8 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				x: shape.x + shape.props.w + xOffset,
 				y: shape.y + yOffset,
 				props: {
-					w: 320,
-					h: 420,
+					w: PDF_EXTRACTED_PAGE_W,
+					h: PDF_EXTRACTED_PAGE_H,
 					assetId,
 				},
 				meta: {
@@ -120,7 +134,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				id: shape.id,
 				type: 'pdf',
 				meta: {
-					...shape.meta,
+					...shapeMeta,
 					pdfPopupOpen: true,
 				},
 			})
@@ -130,7 +144,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				id: shape.id,
 				type: 'pdf',
 				meta: {
-					...shape.meta,
+					...shapeMeta,
 					pdfPopupOpen: false,
 				},
 			})
@@ -171,11 +185,17 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 						<img
 							src={asset.props.src}
 							alt={inferredName}
-							style={{ width: 84, height: 112, objectFit: 'cover', borderRadius: 4, boxShadow: '0 2px 8px rgba(0,0,0,0.35)' }}
+							style={{
+								width: PDF_THUMBNAIL_W,
+								height: PDF_THUMBNAIL_H,
+								objectFit: 'cover',
+								borderRadius: 4,
+								boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+							}}
 							draggable={false}
 						/>
 					) : (
-						<div style={{ color: '#cdd6e3', fontSize: 28 }}>📄</div>
+						<div style={{ color: PDF_FALLBACK_ICON_COLOR, fontSize: PDF_FALLBACK_ICON_SIZE }}>📄</div>
 					)}
 				</div>
 				<div
@@ -208,7 +228,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 							position: 'fixed',
 							inset: 0,
 							zIndex: PDF_OVERLAY_Z_INDEX,
-							backgroundColor: 'rgba(0,0,0,0.45)',
+							backgroundColor: PDF_POPUP_OVERLAY_BG,
 							display: 'flex',
 							alignItems: 'center',
 							justifyContent: 'center',
@@ -240,7 +260,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 									backgroundColor: '#f8f9fc',
 								}}
 							>
-								<div style={{ fontSize: 14, fontWeight: 600, maxWidth: '50%', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+								<div style={{ fontSize: 14, fontWeight: 600, maxWidth: PDF_POPUP_TITLE_MAX_WIDTH, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
 									📄 {inferredName}
 								</div>
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -251,7 +271,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 									>
 										&lt;
 									</button>
-									<span style={{ fontSize: 13, minWidth: 72, textAlign: 'center' }}>{pageLabel}</span>
+									<span style={{ fontSize: 13, minWidth: 72, textAlign: 'center' }}>{safeCurrentPage + 1} / {assetIds.length}</span>
 									<button
 										onClick={handleNext}
 										disabled={safeCurrentPage === assetIds.length - 1}
