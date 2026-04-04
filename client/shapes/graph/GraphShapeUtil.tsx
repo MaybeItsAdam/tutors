@@ -211,10 +211,21 @@ export class GraphShapeUtil extends ShapeUtil<IGraphShape> {
 	}
 
 	override onResize = (shape: IGraphShape, info: any) => {
+		const rawW =
+			info?.bounds?.w ??
+			(info?.initialBounds?.w !== undefined && info?.scaleX !== undefined
+				? info.initialBounds.w * info.scaleX
+				: shape.props.w)
+		const rawH =
+			info?.bounds?.h ??
+			(info?.initialBounds?.h !== undefined && info?.scaleY !== undefined
+				? info.initialBounds.h * info.scaleY
+				: shape.props.h)
+
 		return {
 			props: {
-				w: Math.max(100, info.bounds.w),
-				h: Math.max(80, info.bounds.h),
+				w: Math.max(100, Math.abs(rawW)),
+				h: Math.max(80, Math.abs(rawH)),
 			},
 		}
 	}
