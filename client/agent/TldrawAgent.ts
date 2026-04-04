@@ -10,10 +10,13 @@ import { ContextItem } from '../../shared/types/ContextItem'
 import { PromptPart } from '../../shared/types/PromptPart'
 import { Streaming } from '../../shared/types/Streaming'
 import { TodoItem } from '../../shared/types/TodoItem'
+import { BYOKStore } from '../utils/BYOKStore'
 import { AgentHelpers } from '../AgentHelpers'
 import { getModeNode } from '../modes/AgentModeChart'
 import { AgentModeType } from '../modes/AgentModeDefinitions'
 import { getPromptPartUtilsRecord, PromptPartUtil } from '../parts/PromptPartUtil'
+import { buildMessages } from '../prompt/buildMessages'
+import { buildSystemPrompt } from '../prompt/buildSystemPrompt'
 import { AgentActionManager } from './managers/AgentActionManager'
 import { AgentChatManager } from './managers/AgentChatManager'
 import { AgentChatOriginManager } from './managers/AgentChatOriginManager'
@@ -680,14 +683,27 @@ export class TldrawAgent {
 		prompt,
 		signal,
 	}: {
-		prompt: BaseAgentPrompt
+		prompt: AgentPrompt
 		signal: AbortSignal
 	}): AsyncGenerator<Streaming<AgentAction>> {
-		const res = await fetch('/stream', {
+		
+		const systemPrompt = buildSystemPrompt(prompt)
+		const messages = buildMessages(prompt)
+		
+		// Insert system prompt
+		messages.unshift({
+			role: 'system',
+			content: systemPrompt
+		})
+
+		const res = await fetch('http://localhost:8000/api/chat', {
 			method: 'POST',
-			body: JSON.stringify(prompt),
+			body: JSON.stringify({
+				messages,
+			}),
 			headers: {
 				'Content-Type': 'application/json',
+				...BYOKStore.getHeaders(),
 			},
 			signal,
 		})

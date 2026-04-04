@@ -5,6 +5,7 @@ dist
 *.local
 .wrangler
 .npm-cache
+.tsbuild
 
 # Python backend
 backend/__pycache__

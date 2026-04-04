@@ -3,6 +3,7 @@ import { useAgent } from '../agent/TldrawAgentAppProvider'
 import { ChatHistory } from './chat-history/ChatHistory'
 import { ChatInput } from './ChatInput'
 import { TodoList } from './TodoList'
+import { BYOKSettings } from './byok/BYOKSettings'
 
 export function ChatPanel() {
 	const agent = useAgent()
@@ -47,6 +48,7 @@ export function ChatPanel() {
 				<button className="new-chat-button" onClick={handleNewChat}>
 					+
 				</button>
+				<BYOKSettings />
 			</div>
 			<ChatHistory agent={agent} />
 			<div className="chat-input-container">

@@ -9,10 +9,12 @@ Run with: uvicorn main:app --reload --port 8000
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import json
 import os
+import llm_service
 
 load_dotenv()
 
@@ -59,14 +61,15 @@ async def chat(request: Request):
         raise HTTPException(status_code=400, detail="Missing X-Provider header")
 
     body = await request.json()
+    messages = body.get("messages", [])
 
-    # TODO: Implement in Step 4 with litellm
-    return {
-        "status": "ok",
-        "message": "Chat endpoint ready. LLM integration coming in Step 4.",
-        "provider": provider,
-        "model": model,
-    }
+    # Prefix the model with the provider for LiteLLM routing
+    litellm_model = f"{provider}/{model}"
+
+    return StreamingResponse(
+        llm_service.stream_agent_actions(model=litellm_model, messages=messages, api_key=api_key),
+        media_type="text/event-stream"
+    )
 
 
 @app.websocket("/ws/chat")
