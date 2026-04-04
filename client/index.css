@@ -65,8 +65,15 @@ body {
 	inset: 0;
 	z-index: 1100;
 	background: #ffffff;
-	padding: 80px 32px 32px;
+	padding: 80px 392px 32px 32px;
 	overflow: auto;
+}
+
+@media (max-width: 768px) {
+	.workspace-screen {
+		padding-right: 32px;
+		padding-bottom: calc(45vh + 24px);
+	}
 }
 
 .workspace-screen-header {

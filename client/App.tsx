@@ -130,6 +130,15 @@ function App() {
 		setUiView((prev) => (prev === 'editor' ? 'timeline' : 'landing'))
 	}, [])
 
+	const handleCreateSnapshot = useCallback(() => {
+		if (!app) return
+		const snapshot = app.workspaces.createSnapshot()
+		if (!snapshot) return
+		const workspaceId = app.workspaces.getCurrentWorkspaceId()
+		if (workspaceId) setSelectedWorkspaceId(workspaceId)
+		setUiView('timeline')
+	}, [app])
+
 	const currentWorkspaceForTimeline = useMemo(() => {
 		if (!app) return null
 		const workspaces = app.workspaces.getWorkspaces()
@@ -264,7 +273,7 @@ function App() {
 					{app && uiView === 'editor' && (
 						<button
 							className="workspace-snapshot-fab"
-							onClick={() => app.workspaces.createSnapshot()}
+							onClick={handleCreateSnapshot}
 							title="Create snapshot"
 						>
 							Snapshot
