@@ -51,7 +51,8 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const { assetIds, currentPage } = shape.props
 		const shapeMeta = (shape.meta as PdfShapeMeta | undefined) ?? {}
 		const isOpen = Boolean(shapeMeta.pdfPopupOpen)
-		const safeCurrentPage = Math.min(currentPage, Math.max(0, assetIds.length - 1))
+		const maxPageIndex = assetIds.length - 1
+		const safeCurrentPage = maxPageIndex < 0 ? 0 : Math.min(Math.max(currentPage, 0), maxPageIndex)
 
 		if (!assetIds.length) {
 			return (
@@ -210,6 +211,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 					onPointerDown={(e) => e.stopPropagation()}
 				>
 					<input
+						aria-label="PDF filename"
 						value={displayName}
 						onChange={(e) =>
 							editor.updateShape<IPdfDocumentShape>({

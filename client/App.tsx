@@ -41,6 +41,7 @@ import {
 	PDF_SHAPE_DEFAULT_W,
 } from './shapes/pdf/PdfConstants'
 import { AssetRecordType, TLAsset, TLAssetId } from 'tldraw'
+import { PdfProcessor } from './utils/PdfProcessor'
 
 // Customize tldraw's styles to play to the agent's strengths
 DefaultSizeStyle.setDefaultValue('s')
@@ -48,7 +49,6 @@ DefaultSizeStyle.setDefaultValue('s')
 async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y: number }) {
 	if (file.type !== 'application/pdf') return
 
-	const { PdfProcessor } = await import('./utils/PdfProcessor')
 	const pages = await PdfProcessor.processFile(file)
 	if (!pages.length) return
 
