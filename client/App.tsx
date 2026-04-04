@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import {
 	DefaultSizeStyle,
 	DefaultStylePanel,
@@ -12,6 +12,8 @@ import {
 	TldrawUiToastsProvider,
 	TLUiOverrides,
 	useTools,
+	useEditor,
+	Editor,
 } from 'tldraw'
 import { TldrawAgentApp } from './agent/TldrawAgentApp'
 import {
@@ -36,6 +38,52 @@ import { AssetRecordType, TLAsset, TLAssetId } from 'tldraw'
 
 // Customize tldraw's styles to play to the agent's strengths
 DefaultSizeStyle.setDefaultValue('s')
+
+const PDF_SHAPE_DEFAULT_W = 260
+const PDF_SHAPE_DEFAULT_H = 180
+
+async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y: number }) {
+	if (file.type !== 'application/pdf') return
+
+	const { PdfProcessor } = await import('./utils/PdfProcessor')
+	const pages = await PdfProcessor.processFile(file)
+	if (!pages.length) return
+
+	const assetIds: TLAssetId[] = []
+	const assetsToCreate: TLAsset[] = []
+
+	for (const page of pages) {
+		const assetId = AssetRecordType.createId()
+		assetIds.push(assetId)
+		assetsToCreate.push({
+			id: assetId,
+			type: 'image',
+			typeName: 'asset' as const,
+			meta: {},
+			props: {
+				w: page.width,
+				h: page.height,
+				name: `${file.name} Page ${page.pageNumber}`,
+				isAnimated: false,
+				mimeType: 'image/png',
+				src: page.dataUrl,
+			},
+		})
+	}
+
+	editor.createAssets(assetsToCreate)
+	editor.createShape({
+		type: 'pdf',
+		x: point.x,
+		y: point.y,
+		props: {
+			w: PDF_SHAPE_DEFAULT_W,
+			h: PDF_SHAPE_DEFAULT_H,
+			assetIds,
+			currentPage: 0,
+		},
+	})
+}
 
 // Custom tools for picking context items
 const tools = [TargetShapeTool, TargetAreaTool, MathTool, GraphTool]
@@ -114,6 +162,63 @@ function OffsetStylePanel() {
 	)
 }
 
+function PdfUploadButton() {
+	const editor = useEditor()
+
+	const handleChange = async (e: ChangeEvent<HTMLInputElement>) => {
+		const files = e.target.files
+		if (!files?.length) return
+
+		const viewport = editor.getViewportPageBounds()
+		const origin = { x: viewport.x + viewport.w / 2 - PDF_SHAPE_DEFAULT_W / 2, y: viewport.y + 40 }
+
+		for (let i = 0; i < files.length; i++) {
+			const file = files[i]
+			try {
+				await addPdfToCanvas(editor, file, { x: origin.x + i * 24, y: origin.y + i * 24 })
+			} catch (err) {
+				console.error('Failed to process PDF upload', err)
+			}
+		}
+
+		e.target.value = ''
+	}
+
+	return (
+		<div
+			style={{
+				position: 'absolute',
+				top: 12,
+				left: 12,
+				zIndex: 99999,
+				pointerEvents: 'all',
+			}}
+		>
+			<label
+				style={{
+					display: 'inline-flex',
+					alignItems: 'center',
+					gap: 6,
+					padding: '6px 10px',
+					borderRadius: 8,
+					border: '1px solid rgba(148,163,184,0.45)',
+					background: 'rgba(15,23,42,0.88)',
+					backdropFilter: 'blur(8px)',
+					color: '#e2e8f0',
+					fontSize: 12,
+					fontWeight: 600,
+					cursor: 'pointer',
+					boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+				}}
+			>
+				<span style={{ fontSize: 14 }}>📎</span>
+				Upload PDF
+				<input type="file" accept="application/pdf" multiple style={{ display: 'none' }} onChange={handleChange} />
+			</label>
+		</div>
+	)
+}
+
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
 	const [showCheatSheet, setShowCheatSheet] = useState(false)
@@ -153,6 +258,7 @@ function App() {
 				<>
 					<TldrawOverlays />
 					<PlotGraphButton />
+					<PdfUploadButton />
 					{app && (
 						<TldrawAgentAppContextProvider app={app}>
 							<AgentViewportBoundsHighlights />
@@ -176,54 +282,19 @@ function App() {
 
 							const handleDrop = async (e: DragEvent) => {
 								if (!e.dataTransfer?.files.length) return
-								const file = e.dataTransfer.files[0]
-								if (file.type === 'application/pdf') {
-									e.preventDefault()
-									e.stopPropagation()
-									
-									const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
-									
+								const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf')
+								if (!files.length) return
+
+								e.preventDefault()
+								e.stopPropagation()
+
+								const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
+
+								for (let i = 0; i < files.length; i++) {
 									try {
-										const { PdfProcessor } = await import('./utils/PdfProcessor')
-										const pages = await PdfProcessor.processFile(file)
-										
-										const assetIds: TLAssetId[] = []
-										const assetsToCreate: TLAsset[] = []
-										
-										for (const page of pages) {
-											const assetId = AssetRecordType.createId()
-											assetIds.push(assetId)
-											assetsToCreate.push({
-												id: assetId,
-												type: 'image',
-												typeName: 'asset' as const,
-												meta: {},
-												props: {
-													w: page.width,
-													h: page.height,
-													name: file.name + ' Page ' + page.pageNumber,
-													isAnimated: false,
-													mimeType: 'image/png',
-													src: page.dataUrl,
-												}
-											})
-										}
-										
-										editor.createAssets(assetsToCreate)
-										
-										editor.createShape({
-											type: 'pdf',
-											x: point.x,
-											y: point.y,
-											props: {
-												w: 400,
-												h: 500,
-												assetIds,
-												currentPage: 0
-											}
-										})
-									} catch(err) {
-										console.error("Failed to process PDF", err)
+										await addPdfToCanvas(editor, files[i], { x: point.x + i * 24, y: point.y + i * 24 })
+									} catch (err) {
+										console.error('Failed to process PDF', err)
 									}
 								}
 							}
