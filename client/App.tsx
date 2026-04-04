@@ -280,13 +280,11 @@ function App() {
 						</button>
 					)}
 				</div>
-				{(uiView === 'editor' || uiView === 'timeline') && (
+				{app && (
 					<ErrorBoundary fallback={ChatPanelFallback}>
-						{app && (
-							<TldrawAgentAppContextProvider app={app}>
-								<ChatPanel />
-							</TldrawAgentAppContextProvider>
-						)}
+						<TldrawAgentAppContextProvider app={app}>
+							<ChatPanel />
+						</TldrawAgentAppContextProvider>
 					</ErrorBoundary>
 				)}
 				{app && uiView === 'landing' && (
