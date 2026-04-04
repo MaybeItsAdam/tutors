@@ -1,14 +1,162 @@
 import { evaluate } from 'mathjs'
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { HTMLContainer, Rectangle2d, ShapeUtil, useEditor, useValue } from 'tldraw'
 import { IEquationShape } from '../equation/EquationShape'
 import { graphShapeProps, IGraphShape } from './GraphShape'
 import { latexToMathjsLines } from '../../utils/latexToMathjs'
 
 const SAMPLES = 400
+const INTERSECTION_EPSILON = 1e-3
+const INTERSECTION_THRESHOLD_DIVISOR = 2
+const INTERSECTION_DUPLICATE_X_FACTOR = 1.5
+const INTERSECTION_DUPLICATE_Y_FACTOR = 2
+const INTERSECTION_OUTER_COLOR = '#f8fafc'
+const INTERSECTION_CENTER_COLOR = '#0f1117'
 
 // Colour palette for multi-function graphs
 const CURVE_COLORS = ['#60a5fa', '#34d399', '#f97316', '#f472b6', '#a78bfa', '#facc15']
+
+type GraphSlider = NonNullable<IGraphShape['props']['sliders']>[number]
+
+function isConstantName(name: string) {
+	// Constants are single-letter symbols except x/X (reserved as the graph's independent variable).
+	return /^[a-wyzA-WYZ]$/.test(name)
+}
+
+function collectConstantsFromExpression(expr: string): string[] {
+	const tokens = expr.match(/[A-Za-z]+/g) ?? []
+	const constants = new Set<string>()
+	for (const token of tokens) {
+		if (token.length !== 1) continue
+		if (!isConstantName(token)) continue
+		constants.add(token)
+	}
+	return Array.from(constants).sort()
+}
+
+function mergeSliders(expressions: string[], existing: GraphSlider[]): GraphSlider[] {
+	const names = new Set<string>()
+	for (const expr of expressions) {
+		for (const name of collectConstantsFromExpression(expr)) {
+			names.add(name)
+		}
+	}
+
+	return Array.from(names)
+		.sort()
+		.map((name) => {
+			const prior = existing.find((slider) => slider.name === name)
+			return (
+				prior ?? {
+					name,
+					value: 1,
+					min: -10,
+					max: 10,
+					step: 0.1,
+				}
+			)
+		})
+}
+
+function expressionScope(sliders: GraphSlider[]) {
+	const scope: Record<string, number> = {}
+	for (const slider of sliders) {
+		scope[slider.name] = slider.value
+	}
+	return scope
+}
+
+function createExpressionEvaluator(sliders: GraphSlider[]) {
+	const scope = expressionScope(sliders)
+	return (expr: string, x: number) => {
+		scope.x = x
+		return evaluate(expr, scope)
+	}
+}
+
+function findIntersections(
+	functionsToPlot: { expr: string; color: string; label: string }[],
+	sliders: GraphSlider[],
+	xMin: number,
+	xMax: number
+) {
+	const intersections: { x: number; y: number; colorA: string; colorB: string }[] = []
+	const steps = SAMPLES
+	const dx = (xMax - xMin) / steps
+	// Keep root and de-dup tolerances proportional to sample spacing to reduce flicker
+	// while still catching near-tangent intersections.
+	const threshold = Math.max(INTERSECTION_EPSILON, dx / INTERSECTION_THRESHOLD_DIVISOR)
+	const evaluateExpression = createExpressionEvaluator(sliders)
+
+	const rootBetween = (diffA: number, diffB: number, xa: number, xb: number) => {
+		if (Math.abs(diffA) < 1e-8) return xa
+		if (Math.abs(diffB) < 1e-8) return xb
+		const denom = diffB - diffA
+		if (Math.abs(denom) < 1e-12) return (xa + xb) / 2
+		return xa - (diffA * (xb - xa)) / denom
+	}
+
+	for (let i = 0; i < functionsToPlot.length; i++) {
+		for (let j = i + 1; j < functionsToPlot.length; j++) {
+			const a = functionsToPlot[i]
+			const b = functionsToPlot[j]
+
+			for (let k = 0; k < steps; k++) {
+				const x0 = xMin + k * dx
+				const x1 = x0 + dx
+				let d0: number
+				let d1: number
+				try {
+					d0 = evaluateExpression(a.expr, x0) - evaluateExpression(b.expr, x0)
+					d1 = evaluateExpression(a.expr, x1) - evaluateExpression(b.expr, x1)
+					if (!isFinite(d0) || !isFinite(d1)) continue
+				} catch {
+					continue
+				}
+
+				if (Math.abs(d0) > threshold && Math.abs(d1) > threshold && d0 * d1 > 0) continue
+
+				const xRoot = rootBetween(d0, d1, x0, x1)
+				let yRoot: number
+				try {
+					yRoot = evaluateExpression(a.expr, xRoot)
+					if (!isFinite(yRoot)) continue
+				} catch {
+					continue
+				}
+
+				const duplicate = intersections.some(
+					(point) =>
+						Math.abs(point.x - xRoot) < dx * INTERSECTION_DUPLICATE_X_FACTOR &&
+						Math.abs(point.y - yRoot) < threshold * INTERSECTION_DUPLICATE_Y_FACTOR
+				)
+				if (duplicate) continue
+
+				intersections.push({ x: xRoot, y: yRoot, colorA: a.color, colorB: b.color })
+			}
+		}
+	}
+
+	return intersections
+}
+
+function areSlidersEqual(a: GraphSlider[], b: GraphSlider[]) {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) {
+		const left = a[i]
+		const right = b[i]
+		if (
+			left.name !== right.name ||
+			left.value !== right.value ||
+			left.min !== right.min ||
+			left.max !== right.max ||
+			left.step !== right.step
+		) {
+			return false
+		}
+	}
+	return true
+}
 
 // @ts-expect-error — tldraw's TLShape union is closed; custom shapes work fine at runtime
 export class GraphShapeUtil extends ShapeUtil<IGraphShape> {
@@ -42,6 +190,7 @@ export class GraphShapeUtil extends ShapeUtil<IGraphShape> {
 			yMax: 2,
 			color: '#60a5fa',
 			strokeWidth: 2,
+			sliders: [],
 		}
 	}
 
@@ -62,10 +211,21 @@ export class GraphShapeUtil extends ShapeUtil<IGraphShape> {
 	}
 
 	override onResize = (shape: IGraphShape, info: any) => {
+		const rawW =
+			info?.bounds?.w ??
+			(info?.initialBounds?.w !== undefined && info?.scaleX !== undefined
+				? info.initialBounds.w * info.scaleX
+				: shape.props.w)
+		const rawH =
+			info?.bounds?.h ??
+			(info?.initialBounds?.h !== undefined && info?.scaleY !== undefined
+				? info.initialBounds.h * info.scaleY
+				: shape.props.h)
+
 		return {
 			props: {
-				w: Math.max(100, info.bounds.w),
-				h: Math.max(80, info.bounds.h),
+				w: Math.max(100, Math.abs(rawW)),
+				h: Math.max(80, Math.abs(rawH)),
 			},
 		}
 	}
@@ -73,6 +233,7 @@ export class GraphShapeUtil extends ShapeUtil<IGraphShape> {
 
 function buildPath(
 	functionStr: string,
+	evaluateExpression: (expr: string, x: number) => number,
 	xMin: number,
 	xMax: number,
 	yMin: number,
@@ -91,7 +252,7 @@ function buildPath(
 		const x = xMin + i * step
 		let y: number
 		try {
-			y = evaluate(functionStr, { x })
+			y = evaluateExpression(functionStr, x)
 			if (!isFinite(y)) {
 				penUp = true
 				continue
@@ -125,6 +286,7 @@ function GraphRenderer({
 	editor: any
 }) {
 	const { w, h, functionStr, xMin, xMax, yMin, yMax, color, strokeWidth } = shape.props
+	const sliders = shape.props.sliders ?? []
 	const [editStr, setEditStr] = useState(functionStr)
 	const inputRef = useRef<HTMLInputElement>(null)
 
@@ -166,6 +328,23 @@ function GraphRenderer({
 		boundFunctions.length > 0
 			? boundFunctions.map((f, i) => ({ ...f, color: CURVE_COLORS[i % CURVE_COLORS.length] }))
 			: [{ expr: functionStr, label: functionStr, color }]
+
+	const expectedSliders = useMemo(
+		() => mergeSliders(functionsToPlot.map((fn) => fn.expr), sliders),
+		[functionsToPlot, sliders]
+	)
+	const slidersDiffer = !areSlidersEqual(expectedSliders, sliders)
+	useEffect(() => {
+		if (!slidersDiffer) return
+		editor.updateShape({
+			id: shape.id,
+			type: 'graph',
+			props: { sliders: expectedSliders },
+		})
+	}, [editor, expectedSliders, shape.id, slidersDiffer])
+
+	const evaluateExpression = useMemo(() => createExpressionEvaluator(sliders), [sliders])
+	const intersections = findIntersections(functionsToPlot, sliders, xMin, xMax)
 
 	const handleInputKeyDown = (e: React.KeyboardEvent) => {
 		if (e.key === 'Enter' || e.key === 'Escape') {
@@ -224,7 +403,7 @@ function GraphRenderer({
 				{functionsToPlot.map((fn, i) => (
 					<path
 						key={i}
-						d={buildPath(fn.expr, xMin, xMax, yMin, yMax, w, h)}
+						d={buildPath(fn.expr, evaluateExpression, xMin, xMax, yMin, yMax, w, h)}
 						fill="none"
 						stroke={fn.color}
 						strokeWidth={strokeWidth}
@@ -232,6 +411,30 @@ function GraphRenderer({
 						strokeLinejoin="round"
 					/>
 				))}
+
+				{/* Intersections */}
+				{intersections
+					.filter((p) => p.y >= yMin && p.y <= yMax)
+					.map((p, idx) => (
+						<g key={`intersection-${idx}`}>
+							<circle
+								cx={toSvgX(p.x)}
+								cy={toSvgY(p.y)}
+								r={4}
+								fill={INTERSECTION_CENTER_COLOR}
+								stroke={INTERSECTION_OUTER_COLOR}
+								strokeWidth={1.5}
+							/>
+							<circle
+								cx={toSvgX(p.x)}
+								cy={toSvgY(p.y)}
+								r={2}
+								fill={p.colorA}
+								stroke={p.colorB}
+								strokeWidth={1}
+							/>
+						</g>
+					))}
 			</svg>
 
 			{/* Legend (bottom-left) */}
@@ -300,6 +503,58 @@ function GraphRenderer({
 						}}
 					/>
 					<span style={{ color: '#475569', fontSize: 11, flexShrink: 0 }}>Enter to apply</span>
+				</div>
+			)}
+
+			{/* Slider controls for constants */}
+			{sliders.length > 0 && (
+				<div
+					style={{
+						position: 'absolute',
+						top: 8,
+						right: 8,
+						width: Math.min(220, w - 16),
+						maxHeight: Math.max(80, h - 20),
+						overflowY: 'auto',
+						background: 'rgba(10,12,18,0.78)',
+						border: '1px solid rgba(255,255,255,0.12)',
+						borderRadius: 8,
+						padding: 8,
+						display: 'flex',
+						flexDirection: 'column',
+						gap: 6,
+						pointerEvents: 'all',
+					}}
+				>
+					{sliders.map((slider) => (
+						<div key={slider.name} style={{ display: 'grid', gridTemplateColumns: '16px 1fr auto', gap: 8, alignItems: 'center' }}>
+							<span style={{ color: '#e2e8f0', fontFamily: 'monospace', fontSize: 12 }}>{slider.name}</span>
+							<input
+								type="range"
+								min={slider.min}
+								max={slider.max}
+								step={slider.step}
+								value={slider.value}
+								onPointerDown={(e) => e.stopPropagation()}
+								onChange={(e) => {
+									const value = Number(e.target.value)
+									editor.updateShape({
+										id: shape.id,
+										type: 'graph',
+										props: {
+											sliders: sliders.map((s) =>
+												s.name === slider.name ? { ...s, value } : s
+											),
+										},
+									})
+								}}
+								style={{ width: '100%' }}
+							/>
+							<span style={{ color: '#94a3b8', fontSize: 11, fontFamily: 'monospace', minWidth: 42, textAlign: 'right' }}>
+								{slider.value.toFixed(1)}
+							</span>
+						</div>
+					))}
 				</div>
 			)}
 
