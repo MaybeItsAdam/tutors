@@ -7,6 +7,7 @@ import {
 	TLImageShape,
 	useEditor
 } from 'tldraw'
+import { useEffect, useRef, useState } from 'react'
 import { IPdfDocumentShape, pdfDocumentShapeProps } from './PdfDocumentShape'
 import {
 	PDF_DEFAULT_NAME,
@@ -33,6 +34,10 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 	static override type = 'pdf' as const
 	static override props = pdfDocumentShapeProps
 
+	override canResize() {
+		return true
+	}
+
 	override canEdit() {
 		return false
 	}
@@ -53,6 +58,9 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const isOpen = Boolean(shapeMeta.pdfPopupOpen)
 		const maxPageIndex = assetIds.length - 1
 		const safeCurrentPage = maxPageIndex < 0 ? 0 : Math.min(Math.max(currentPage, 0), maxPageIndex)
+		const [popupRect, setPopupRect] = useState({ left: 80, top: 60, width: 960, height: 720 })
+		const dragStateRef = useRef<{ pointerId: number; startX: number; startY: number; startLeft: number; startTop: number } | null>(null)
+		const resizeStateRef = useRef<{ pointerId: number; startX: number; startY: number; startW: number; startH: number } | null>(null)
 
 		if (!assetIds.length) {
 			return (
@@ -152,6 +160,48 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				},
 			})
 		}
+
+		useEffect(() => {
+			if (!isOpen) return
+			const onKeyDown = (e: KeyboardEvent) => {
+				if (e.key === 'Escape') {
+					closePopup()
+				}
+			}
+			window.addEventListener('keydown', onKeyDown)
+			return () => window.removeEventListener('keydown', onKeyDown)
+		}, [isOpen])
+
+		useEffect(() => {
+			const onMove = (e: PointerEvent) => {
+				const dragState = dragStateRef.current
+				const resizeState = resizeStateRef.current
+				if (dragState) {
+					setPopupRect((current) => ({
+						...current,
+						left: Math.max(8, dragState.startLeft + (e.clientX - dragState.startX)),
+						top: Math.max(8, dragState.startTop + (e.clientY - dragState.startY)),
+					}))
+				}
+				if (resizeState) {
+					setPopupRect((current) => ({
+						...current,
+						width: Math.max(420, resizeState.startW + (e.clientX - resizeState.startX)),
+						height: Math.max(320, resizeState.startH + (e.clientY - resizeState.startY)),
+					}))
+				}
+			}
+			const onUp = (e: PointerEvent) => {
+				if (dragStateRef.current?.pointerId === e.pointerId) dragStateRef.current = null
+				if (resizeStateRef.current?.pointerId === e.pointerId) resizeStateRef.current = null
+			}
+			window.addEventListener('pointermove', onMove)
+			window.addEventListener('pointerup', onUp)
+			return () => {
+				window.removeEventListener('pointermove', onMove)
+				window.removeEventListener('pointerup', onUp)
+			}
+		}, [])
 		const documentFace = (
 			<div
 				style={{
@@ -268,13 +318,15 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 							alignItems: 'center',
 							justifyContent: 'center',
 						}}
-						onClick={closePopup}
-						onPointerDown={(e) => e.stopPropagation()}
+						onPointerDown={closePopup}
 					>
 						<div
 							style={{
-								width: 'min(1100px, 92vw)',
-								height: 'min(800px, 90vh)',
+								position: 'fixed',
+								left: popupRect.left,
+								top: popupRect.top,
+								width: `min(${popupRect.width}px, calc(100vw - 16px))`,
+								height: `min(${popupRect.height}px, calc(100vh - 16px))`,
 								backgroundColor: 'white',
 								borderRadius: 12,
 								boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
@@ -293,6 +345,18 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 									padding: '10px 14px',
 									borderBottom: '1px solid #e4e7ee',
 									backgroundColor: '#f8f9fc',
+									cursor: 'move',
+									userSelect: 'none',
+								}}
+								onPointerDown={(e) => {
+									e.stopPropagation()
+									dragStateRef.current = {
+										pointerId: e.pointerId,
+										startX: e.clientX,
+										startY: e.clientY,
+										startLeft: popupRect.left,
+										startTop: popupRect.top,
+									}
 								}}
 							>
 								<div style={{ fontSize: 14, fontWeight: 600, maxWidth: PDF_POPUP_TITLE_MAX_WIDTH, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
@@ -334,18 +398,38 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 									</button>
 								</div>
 							</div>
-							<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f3f8' }}>
+							<div style={{ flex: 1, overflowY: 'auto', backgroundColor: '#f1f3f8' }}>
 								{asset?.props?.src ? (
 									<img
 										src={asset.props.src}
 										alt={`Page ${safeCurrentPage + 1}`}
-										style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+										style={{ width: '100%', height: 'auto', display: 'block' }}
 										draggable={false}
 									/>
 								) : (
 									<div style={{ color: '#5a6578' }}>Missing Asset</div>
 								)}
 							</div>
+							<div
+								style={{
+									position: 'absolute',
+									right: 0,
+									bottom: 0,
+									width: 18,
+									height: 18,
+									cursor: 'nwse-resize',
+								}}
+								onPointerDown={(e) => {
+									e.stopPropagation()
+									resizeStateRef.current = {
+										pointerId: e.pointerId,
+										startX: e.clientX,
+										startY: e.clientY,
+										startW: popupRect.width,
+										startH: popupRect.height,
+									}
+								}}
+							/>
 						</div>
 					</div>
 				)}
