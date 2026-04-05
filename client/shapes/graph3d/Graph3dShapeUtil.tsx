@@ -2,8 +2,10 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { compile } from 'mathjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BaseBoxShapeUtil, HTMLContainer } from 'tldraw'
+import { BaseBoxShapeUtil, HTMLContainer, useEditor, useValue } from 'tldraw'
 import { graph3dShapeProps, IGraph3dShape } from './Graph3dShape'
+import { IEquationShape } from '../equation/EquationShape'
+import { matrixFromLatex, apply3, det3, trace3 } from '../../utils/matrixFromLatex'
 
 // ── Height-to-colour (cool→warm rainbow) ─────────────────────────────────────
 function heightColor(t: number): [number, number, number] {
@@ -89,15 +91,34 @@ function Graph3dRenderer({
 	isEditing: boolean
 }) {
 	const { w, h, expression, xMin, xMax, yMin, yMax, resolution } = shape.props
+	const editor = useEditor()
 	const canvasRef = useRef<HTMLCanvasElement>(null)
 	const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
 	const sceneRef = useRef<THREE.Scene | null>(null)
 	const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
 	const controlsRef = useRef<OrbitControls | null>(null)
 	const meshRef = useRef<THREE.Mesh | null>(null)
+	const matrixArrowsRef = useRef<THREE.Object3D[]>([])
 	const rafRef = useRef<number>(0)
 
 	const [editExpr, setEditExpr] = useState(expression)
+
+	// ── Detect bound 3×3 matrix from an arrow-linked equation shape ──
+	const boundMatrix = useValue('bound-matrix-3x3', () => {
+		const incomingBindings = editor.getBindingsToShape(shape.id, 'arrow')
+		for (const binding of incomingBindings) {
+			if (binding.props.terminal !== 'end') continue
+			const startBindings = editor.getBindingsFromShape(binding.fromId, 'arrow')
+			for (const startB of startBindings) {
+				if (startB.props.terminal !== 'start') continue
+				const srcShape = editor.getShape(startB.toId)
+				if (!srcShape || srcShape.type !== 'equation') continue
+				const m = matrixFromLatex((srcShape as IEquationShape).props.latex?.trim() ?? '')
+				if (m && m.length === 3 && m[0].length === 3) return m
+			}
+		}
+		return null
+	}, [editor, shape.id])
 
 	// ── Setup scene on mount ──
 	useEffect(() => {
@@ -183,6 +204,9 @@ function Graph3dRenderer({
 			meshRef.current.geometry.dispose()
 		}
 
+		// Hide surface when showing matrix transform
+		if (boundMatrix) return
+
 		const material = new THREE.MeshPhongMaterial({
 			vertexColors: true,
 			side: THREE.DoubleSide,
@@ -201,7 +225,52 @@ function Graph3dRenderer({
 		})
 		const wfMesh = new THREE.Mesh(geo, wfMat)
 		scene.add(wfMesh)
-	}, [geo])
+	}, [geo, boundMatrix])
+
+	// ── Matrix 3D visualization: transformed basis arrows ──
+	useEffect(() => {
+		const scene = sceneRef.current
+		if (!scene) return
+
+		// Remove old matrix arrows
+		for (const obj of matrixArrowsRef.current) scene.remove(obj)
+		matrixArrowsRef.current = []
+
+		if (!boundMatrix) return
+
+		const origin = new THREE.Vector3(0, 0, 0)
+		const scale = Math.max(xMax - xMin, yMax - yMin) * 0.4
+
+		// Standard basis e1, e2, e3 → columns of matrix
+		const bases: Array<{ src: [number,number,number]; col: number }> = [
+			{ src: [1, 0, 0], col: 0x60a5fa },  // e1 → blue
+			{ src: [0, 1, 0], col: 0x34d399 },  // e2 → green (Note: Three.js y=up)
+			{ src: [0, 0, 1], col: 0xf97316 },  // e3 → orange
+		]
+
+		for (const { src, col } of bases) {
+			// Apply matrix (world-space: x stays x, z→y maps as Three.js has y up)
+			const [tx, ty, tz] = apply3(boundMatrix, src[0], src[1], src[2])
+			// Three.js: x→x, z→y (up), y→z
+			const tip = new THREE.Vector3(tx * scale, tz * scale, ty * scale)
+			const len = tip.length()
+			if (len < 0.01) continue
+			const dir = tip.clone().normalize()
+			const arrow = new THREE.ArrowHelper(dir, origin, len, col, len * 0.18, len * 0.12)
+			scene.add(arrow)
+			matrixArrowsRef.current.push(arrow)
+		}
+
+		// Also show original basis (faint gray)
+		for (const src of [[1,0,0],[0,1,0],[0,0,1]] as [number,number,number][]) {
+			const tip = new THREE.Vector3(src[0] * scale * 0.55, src[2] * scale * 0.55, src[1] * scale * 0.55)
+			const len = tip.length()
+			const dir = tip.clone().normalize()
+			const arrow = new THREE.ArrowHelper(dir, origin, len, 0x334155, len * 0.18, len * 0.12)
+			scene.add(arrow)
+			matrixArrowsRef.current.push(arrow)
+		}
+	}, [boundMatrix, xMin, xMax, yMin, yMax])
 
 	// ── Toggle orbit controls with edit mode ──
 	useEffect(() => {
@@ -278,6 +347,39 @@ function Graph3dRenderer({
 				)}
 			</div>
 
+			{/* Matrix 3D info panel */}
+			{boundMatrix && (() => {
+				const det = det3(boundMatrix)
+				const tr = trace3(boundMatrix)
+				return (
+					<div
+						style={{
+							position: 'absolute',
+							top: 8,
+							left: 8,
+							background: 'rgba(10,12,18,0.82)',
+							border: '1px solid rgba(255,255,255,0.1)',
+							borderRadius: 8,
+							padding: '6px 10px',
+							display: 'flex',
+							flexDirection: 'column',
+							gap: 2,
+							pointerEvents: 'none',
+						}}
+					>
+						<span style={{ fontSize: 11, fontFamily: 'monospace', color: '#e2e8f0' }}>
+							det = {+det.toFixed(4)}
+						</span>
+						<span style={{ fontSize: 11, fontFamily: 'monospace', color: '#e2e8f0' }}>
+							tr = {+tr.toFixed(4)}
+						</span>
+						<span style={{ fontSize: 10, fontFamily: 'monospace', color: '#60a5fa' }}>e₁→ blue</span>
+						<span style={{ fontSize: 10, fontFamily: 'monospace', color: '#34d399' }}>e₂→ green</span>
+						<span style={{ fontSize: 10, fontFamily: 'monospace', color: '#f97316' }}>e₃→ orange</span>
+					</div>
+				)
+			})()}
+
 			{isEditing && (
 				<div
 					style={{
@@ -289,7 +391,7 @@ function Graph3dRenderer({
 						pointerEvents: 'none',
 					}}
 				>
-					drag to rotate · scroll to zoom
+					{boundMatrix ? '3×3 matrix transform' : 'drag to rotate · scroll to zoom'}
 				</div>
 			)}
 		</div>

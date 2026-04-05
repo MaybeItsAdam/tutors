@@ -4,6 +4,14 @@ import { HTMLContainer, Rectangle2d, ShapeUtil, useEditor, useValue } from 'tldr
 import { IEquationShape } from '../equation/EquationShape'
 import { graphShapeProps, IGraphShape } from './GraphShape'
 import { latexToMathjsLines } from '../../utils/latexToMathjs'
+import {
+	matrixFromLatex,
+	apply2,
+	eigen2,
+	eigenvec2,
+	det2,
+	trace2,
+} from '../../utils/matrixFromLatex'
 
 const SAMPLES = 400
 const INTERSECTION_EPSILON = 1e-3
@@ -372,6 +380,215 @@ function buildPath(
 	return points.join(' ')
 }
 
+// ── Matrix / linear-transformation visualisation ──────────────────────────────
+
+function shortenVec(
+	ox: number, oy: number,
+	tx: number, ty: number,
+	headPx: number,
+): [number, number] {
+	const dx = tx - ox, dy = ty - oy
+	const len = Math.hypot(dx, dy)
+	return len <= headPx ? [tx, ty] : [tx - (dx / len) * headPx, ty - (dy / len) * headPx]
+}
+
+function MatrixTransformViz({
+	matrix,
+	xMin, xMax, yMin, yMax, w, h,
+	uid,
+}: {
+	matrix: number[][]
+	xMin: number; xMax: number
+	yMin: number; yMax: number
+	w: number; h: number
+	uid: string
+}) {
+	const [[a, b], [c, d]] = matrix
+
+	const toX = (x: number) => ((x - xMin) / (xMax - xMin)) * w
+	const toY = (y: number) => h - ((y - yMin) / (yMax - yMin)) * h
+	// Transform a world-space point through M then to SVG coords
+	const tx = (wx: number, wy: number): [number, number] =>
+		[toX(a * wx + b * wy), toY(c * wx + d * wy)]
+
+	// Origin in SVG
+	const ox = toX(0), oy = toY(0)
+
+	// Transformed basis tips in SVG
+	const [e1sx, e1sy] = [toX(a), toY(c)]   // Me₁ = col 1 = (a, c)
+	const [e2sx, e2sy] = [toX(b), toY(d)]   // Me₂ = col 2 = (b, d)
+
+	// Original unit-basis tips in SVG (for reference arrows)
+	const [oe1sx, oe1sy] = [toX(1), toY(0)]
+	const [oe2sx, oe2sy] = [toX(0), toY(1)]
+
+	// Grid lines: integer x/y values in the original space, covering the viewport
+	const ext = Math.max(Math.abs(xMin), Math.abs(xMax), Math.abs(yMin), Math.abs(yMax)) * 2 + 5
+	const gMin = Math.max(-12, Math.ceil(Math.min(xMin, yMin) - 1))
+	const gMax = Math.min(12, Math.floor(Math.max(xMax, yMax) + 1))
+	const gridInts: number[] = Array.from(
+		{ length: Math.max(0, gMax - gMin + 1) },
+		(_, i) => gMin + i,
+	)
+
+	// Eigenvectors
+	const eigen = eigen2(matrix)
+	const viewDiag = Math.hypot(xMax - xMin, yMax - yMin)
+	const eigLen = viewDiag * 0.28
+
+	const eigenPairs: Array<{ v: [number, number]; λ: number; col: string; mid: string }> = []
+	if (eigen.real) {
+		const { λ1, λ2 } = eigen
+		const ev1 = eigenvec2(matrix, λ1)
+		eigenPairs.push({ v: [ev1[0] * eigLen, ev1[1] * eigLen], λ: λ1, col: '#fbbf24', mid: 'ev1' })
+		if (Math.abs(λ1 - λ2) > 1e-6) {
+			const ev2 = eigenvec2(matrix, λ2)
+			eigenPairs.push({ v: [ev2[0] * eigLen, ev2[1] * eigLen], λ: λ2, col: '#fb923c', mid: 'ev2' })
+		}
+	}
+
+	const mkId = (s: string) => `mtv-${uid}-${s}`
+
+	// SVG arrow vector (from origin to tip, shortened for arrowhead clearance)
+	const Arrow = ({
+		tipX, tipY,
+		markerId,
+		stroke,
+		strokeWidth = 2.5,
+		dashed = false,
+	}: {
+		tipX: number; tipY: number
+		markerId: string
+		stroke: string
+		strokeWidth?: number
+		dashed?: boolean
+	}) => {
+		const tooShort = Math.hypot(tipX - ox, tipY - oy) < 8
+		if (tooShort) return null
+		const [sx, sy] = shortenVec(ox, oy, tipX, tipY, 10)
+		return (
+			<line
+				x1={ox} y1={oy} x2={sx} y2={sy}
+				stroke={stroke}
+				strokeWidth={strokeWidth}
+				strokeDasharray={dashed ? '6,3' : undefined}
+				markerEnd={`url(#${markerId})`}
+			/>
+		)
+	}
+
+	return (
+		<g>
+			<defs>
+				{[
+					{ id: mkId('e1'),   color: '#60a5fa' },
+					{ id: mkId('e2'),   color: '#34d399' },
+					{ id: mkId('orig'), color: '#334155' },
+					{ id: mkId('ev1'),  color: '#fbbf24' },
+					{ id: mkId('ev2'),  color: '#fb923c' },
+				].map(m => (
+					<marker key={m.id} id={m.id} markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+						<polygon points="0 0,10 3.5,0 7" fill={m.color} />
+					</marker>
+				))}
+			</defs>
+
+			{/* ── Transformed coordinate grid ─────────────────────────── */}
+			{/* Vertical lines: constant original-x values */}
+			{gridInts.map(i => {
+				const [x0, y0] = tx(i, -ext)
+				const [x1, y1] = tx(i,  ext)
+				return (
+					<line key={`vg${i}`} x1={x0} y1={y0} x2={x1} y2={y1}
+						stroke={i === 0 ? 'rgba(96,165,250,0.55)' : 'rgba(96,165,250,0.13)'}
+						strokeWidth={i === 0 ? 1.2 : 0.7}
+					/>
+				)
+			})}
+			{/* Horizontal lines: constant original-y values */}
+			{gridInts.map(j => {
+				const [x0, y0] = tx(-ext, j)
+				const [x1, y1] = tx( ext, j)
+				return (
+					<line key={`hg${j}`} x1={x0} y1={y0} x2={x1} y2={y1}
+						stroke={j === 0 ? 'rgba(52,211,153,0.55)' : 'rgba(52,211,153,0.13)'}
+						strokeWidth={j === 0 ? 1.2 : 0.7}
+					/>
+				)
+			})}
+
+			{/* ── Unit parallelogram (image of [0,1]² under M) ──────── */}
+			<polygon
+				points={[
+					[ox, oy],
+					[e1sx, e1sy],
+					[toX(a + b), toY(c + d)],
+					[e2sx, e2sy],
+				].map(([px, py]) => `${px},${py}`).join(' ')}
+				fill="rgba(99,102,241,0.10)"
+				stroke="rgba(99,102,241,0.45)"
+				strokeWidth="1"
+				strokeDasharray="4,3"
+			/>
+
+			{/* ── Eigenvectors ────────────────────────────────────────── */}
+			{eigenPairs.map(({ v, λ, col, mid }) => {
+				const [evsx, evsy] = [toX(v[0]), toY(v[1])]
+				const [nevsx, nevsy] = [toX(-v[0]), toY(-v[1])]
+				// Label past the tip
+				const lx = evsx + (evsx - ox) * 0.18
+				const ly = evsy + (evsy - oy) * 0.18
+				return (
+					<g key={mid}>
+						<Arrow tipX={evsx}  tipY={evsy}  markerId={mkId(mid)} stroke={col} strokeWidth={2} dashed />
+						<Arrow tipX={nevsx} tipY={nevsy} markerId={mkId(mid)} stroke={col} strokeWidth={2} dashed />
+						<text x={lx} y={ly} fill={col} fontSize="11" fontFamily="monospace" textAnchor="middle"
+							style={{ userSelect: 'none' }}>
+							λ={+λ.toFixed(2)}
+						</text>
+					</g>
+				)
+			})}
+
+			{/* ── Original unit basis (reference, very faint) ─────────── */}
+			<Arrow tipX={oe1sx} tipY={oe1sy} markerId={mkId('orig')} stroke="#475569" strokeWidth={1.5} />
+			<Arrow tipX={oe2sx} tipY={oe2sy} markerId={mkId('orig')} stroke="#475569" strokeWidth={1.5} />
+			<text x={oe1sx + 5} y={oe1sy + 4} fill="#475569" fontSize="10" fontFamily="monospace"
+				style={{ userSelect: 'none' }}>e₁</text>
+			<text x={oe2sx + 4} y={oe2sy - 5} fill="#475569" fontSize="10" fontFamily="monospace"
+				style={{ userSelect: 'none' }}>e₂</text>
+
+			{/* ── Transformed e₁ arrow ────────────────────────────────── */}
+			{Math.hypot(e1sx - ox, e1sy - oy) > 8 && (
+				<>
+					<Arrow tipX={e1sx} tipY={e1sy} markerId={mkId('e1')} stroke="#60a5fa" />
+					<text
+						x={e1sx + (e1sx - ox) * 0.14}
+						y={e1sy + (e1sy - oy) * 0.14}
+						fill="#60a5fa" fontSize="11" fontFamily="monospace" textAnchor="middle"
+						style={{ userSelect: 'none' }}>
+						({+a.toFixed(2)},{+c.toFixed(2)})
+					</text>
+				</>
+			)}
+
+			{/* ── Transformed e₂ arrow ────────────────────────────────── */}
+			{Math.hypot(e2sx - ox, e2sy - oy) > 8 && (
+				<>
+					<Arrow tipX={e2sx} tipY={e2sy} markerId={mkId('e2')} stroke="#34d399" />
+					<text
+						x={e2sx + (e2sx - ox) * 0.14}
+						y={e2sy + (e2sy - oy) * 0.14}
+						fill="#34d399" fontSize="11" fontFamily="monospace" textAnchor="middle"
+						style={{ userSelect: 'none' }}>
+						({+b.toFixed(2)},{+d.toFixed(2)})
+					</text>
+				</>
+			)}
+		</g>
+	)
+}
+
 function GraphRenderer({
 	shape,
 	isEditing,
@@ -417,6 +634,23 @@ function GraphRenderer({
 			}
 		}
 		return results
+	}, [editor, shape.id])
+
+	// ── Reactive: detect a 2×2 matrix bound via an arrow ──
+	const boundMatrix = useValue('bound-matrix-2x2', () => {
+		const incomingBindings = editor.getBindingsToShape(shape.id, 'arrow')
+		for (const binding of incomingBindings) {
+			if (binding.props.terminal !== 'end') continue
+			const startBindings = editor.getBindingsFromShape(binding.fromId, 'arrow')
+			for (const startB of startBindings) {
+				if (startB.props.terminal !== 'start') continue
+				const srcShape = editor.getShape(startB.toId)
+				if (!srcShape || srcShape.type !== 'equation') continue
+				const m = matrixFromLatex((srcShape as IEquationShape).props.latex?.trim() ?? '')
+				if (m && m.length === 2 && m[0].length === 2) return m
+			}
+		}
+		return null
 	}, [editor, shape.id])
 
 	// If there are bound equations, use those. Otherwise fall back to the shape's own functionStr.
@@ -495,8 +729,19 @@ function GraphRenderer({
 					<line x1={yAxisX} y1={0} x2={yAxisX} y2={h} stroke="rgba(255,255,255,0.25)" strokeWidth={1} />
 				)}
 
-				{/* One curve per function */}
-				{functionsToPlot.map((fn, i) => (
+				{/* Matrix linear-transform visualisation */}
+				{boundMatrix && (
+					<MatrixTransformViz
+						matrix={boundMatrix}
+						xMin={xMin} xMax={xMax}
+						yMin={yMin} yMax={yMax}
+						w={w} h={h}
+						uid={shape.id.replace(/[^a-zA-Z0-9]/g, '')}
+					/>
+				)}
+
+				{/* One curve per function — hidden when a matrix is driving the graph */}
+				{!boundMatrix && functionsToPlot.map((fn, i) => (
 					<path
 						key={i}
 						d={buildPath(fn.expr, evaluateExpression, xMin, xMax, yMin, yMax, w, h)}
@@ -509,7 +754,7 @@ function GraphRenderer({
 				))}
 
 				{/* Intersections */}
-				{intersections
+				{!boundMatrix && intersections
 					.filter((p) => p.y >= yMin && p.y <= yMax)
 					.map((p, idx) => (
 						<g key={`intersection-${idx}`}>
@@ -534,8 +779,47 @@ function GraphRenderer({
 					))}
 			</svg>
 
-			{/* Legend (bottom-left) */}
-			{!isEditing && (
+			{/* Matrix info panel */}
+			{boundMatrix && (() => {
+				const det = det2(boundMatrix)
+				const tr = trace2(boundMatrix)
+				const eigen = eigen2(boundMatrix)
+				const eigenStr = eigen.real
+					? `λ₁=${+eigen.λ1.toFixed(3)}, λ₂=${+eigen.λ2.toFixed(3)}`
+					: `${+eigen.re.toFixed(3)} ± ${+eigen.im.toFixed(3)}i`
+				return (
+					<div
+						style={{
+							position: 'absolute',
+							top: 8,
+							left: 8,
+							background: 'rgba(10,12,18,0.82)',
+							border: '1px solid rgba(255,255,255,0.1)',
+							borderRadius: 8,
+							padding: '6px 10px',
+							display: 'flex',
+							flexDirection: 'column',
+							gap: 2,
+							pointerEvents: 'none',
+						}}
+					>
+						{[
+							{ label: 'det', value: +det.toFixed(4), color: '#e2e8f0' },
+							{ label: 'tr', value: +tr.toFixed(4), color: '#e2e8f0' },
+						].map(({ label, value, color }) => (
+							<span key={label} style={{ fontSize: 11, fontFamily: 'monospace', color }}>
+								{label} = {value}
+							</span>
+						))}
+						<span style={{ fontSize: 11, fontFamily: 'monospace', color: eigen.real ? '#fbbf24' : '#f472b6' }}>
+							{eigenStr}
+						</span>
+					</div>
+				)
+			})()}
+
+			{/* Legend (bottom-left) — hidden in matrix mode */}
+			{!isEditing && !boundMatrix && (
 				<div
 					style={{
 						position: 'absolute',
@@ -565,8 +849,8 @@ function GraphRenderer({
 				</div>
 			)}
 
-			{/* Edit overlay (only shown when no equations are bound) */}
-			{isEditing && boundFunctions.length === 0 && (
+			{/* Edit overlay (only shown when no equations or matrix are bound) */}
+			{isEditing && !boundMatrix && boundFunctions.length === 0 && (
 				<div
 					style={{
 						position: 'absolute',
@@ -655,8 +939,8 @@ function GraphRenderer({
 				</div>
 			)}
 
-			{/* Hint when editing but equations control the graph */}
-			{isEditing && boundFunctions.length > 0 && (
+			{/* Hint when editing but a matrix or equations control the graph */}
+			{isEditing && (boundMatrix || boundFunctions.length > 0) && (
 				<div
 					style={{
 						position: 'absolute',
@@ -672,7 +956,9 @@ function GraphRenderer({
 						textAlign: 'center',
 					}}
 				>
-					Driven by {boundFunctions.length} linked equation{boundFunctions.length > 1 ? 's' : ''} — edit the MathLive shapes to update
+					{boundMatrix
+						? 'Showing linear transformation — edit the linked matrix equation to update'
+						: `Driven by ${boundFunctions.length} linked equation${boundFunctions.length > 1 ? 's' : ''} — edit the MathLive shapes to update`}
 				</div>
 			)}
 		</div>
