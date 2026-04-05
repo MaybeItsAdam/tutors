@@ -224,23 +224,30 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const documentFace = (
 			<div
 				style={{
+					width: '100%',
 					height: '100%',
 					display: 'flex',
 					flexDirection: 'column',
 					alignItems: 'center',
 					justifyContent: 'center',
-					gap: 10,
+					gap: 6,
 					backgroundColor: 'transparent',
+					boxSizing: 'border-box',
+					padding: '8px 8px 4px',
+					overflow: 'hidden',
 				}}
 			>
+				{/* Thumbnail takes all available height minus the filename strip */}
 				<div
 					style={{
-						width: thumbnailContainerW,
-						height: thumbnailContainerH,
+						flex: '1 1 0',
+						minHeight: 0,
+						width: '100%',
 						display: 'flex',
 						alignItems: 'center',
 						justifyContent: 'center',
 						cursor: 'pointer',
+						overflow: 'hidden',
 					}}
 					onDoubleClick={(e) => {
 						e.stopPropagation()
@@ -257,6 +264,7 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 								maxHeight: '100%',
 								objectFit: 'contain',
 								borderRadius: 4,
+								display: 'block',
 							}}
 							draggable={false}
 						/>
@@ -266,16 +274,18 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 				</div>
 				<div
 					style={{
-						maxWidth: 140,
+						width: '100%',
 						padding: '0 6px',
 						borderRadius: 8,
 						backgroundColor: 'transparent',
 						color: '#e2e8f0',
 						fontSize: 12,
 						fontWeight: 700,
-						height: 26,
+						height: 24,
+						flexShrink: 0,
 						display: 'flex',
 						alignItems: 'center',
+						boxSizing: 'border-box',
 					}}
 					onPointerDown={(e) => e.stopPropagation()}
 				>
@@ -456,12 +466,21 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 	}
 	
 	override onResize = (shape: IPdfDocumentShape, info: any) => {
-		const nextW = info?.bounds?.w ?? shape.props.w
-		const nextH = info?.bounds?.h ?? shape.props.h
+		// Support both direct bounds and scale-based resize modes
+		const rawW =
+			info?.bounds?.w ??
+			(info?.initialBounds?.w != null && info?.scaleX != null
+				? info.initialBounds.w * info.scaleX
+				: shape.props.w)
+		const rawH =
+			info?.bounds?.h ??
+			(info?.initialBounds?.h != null && info?.scaleY != null
+				? info.initialBounds.h * info.scaleY
+				: shape.props.h)
 		return {
 			props: {
-				w: Math.max(100, nextW),
-				h: Math.max(100, nextH),
+				w: Math.max(80, Math.abs(rawW)),
+				h: Math.max(80, Math.abs(rawH)),
 			},
 		}
 	}

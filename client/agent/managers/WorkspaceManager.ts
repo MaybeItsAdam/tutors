@@ -19,6 +19,7 @@ export interface WorkspaceSnapshot {
 	createdAt: number
 	parentSnapshotId: string | null
 	mergedFromBranchId: string | null
+	mergedFromSnapshotId: string | null
 	isAuto: boolean
 	state: WorkspaceState
 }
@@ -201,6 +202,7 @@ export class WorkspaceManager extends BaseAgentAppManager {
 			createdAt: now,
 			parentSnapshotId: branch.headSnapshotId,
 			mergedFromBranchId: options?.mergeFromBranchId ?? null,
+			mergedFromSnapshotId: null,
 			isAuto: options?.isAuto ?? false,
 			state,
 		}
@@ -304,6 +306,62 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		return true
 	}
 
+	forkBranchFrom(name: string, sourceBranchId: string, fromSnapshotId: string): WorkspaceBranch | null {
+		const workspace = this.getCurrentWorkspace()
+		if (!workspace) return null
+		const sourceBranch = workspace.branches[sourceBranchId]
+		if (!sourceBranch) return null
+
+		const trimmed = name.trim()
+		if (!trimmed) return null
+
+		const now = Date.now()
+		const baseSnapshot = sourceBranch.snapshots.find((s) => s.id === fromSnapshotId) ?? null
+		if (!baseSnapshot) return null
+
+		const baseState = structuredClone(baseSnapshot.state)
+		const forkSnapshot: WorkspaceSnapshot = {
+			id: uniqueId(),
+			name: `Fork base: ${baseSnapshot.name}`,
+			createdAt: now,
+			parentSnapshotId: baseSnapshot.id,
+			mergedFromBranchId: null,
+			mergedFromSnapshotId: null,
+			isAuto: false,
+			state: structuredClone(baseState),
+		}
+
+		const branch: WorkspaceBranch = {
+			id: uniqueId(),
+			name: trimmed,
+			createdAt: now,
+			updatedAt: now,
+			parentBranchId: sourceBranchId,
+			forkedFromSnapshotId: baseSnapshot.id,
+			headSnapshotId: forkSnapshot.id,
+			workingState: structuredClone(baseState),
+			snapshots: [forkSnapshot],
+		}
+
+		this.$workspaces.update((prev) => {
+			const current = prev[workspace.id]
+			if (!current) return prev
+			return {
+				...prev,
+				[workspace.id]: {
+					...current,
+					updatedAt: now,
+					branches: {
+						...current.branches,
+						[branch.id]: branch,
+					},
+				},
+			}
+		})
+		this.persistState()
+		return branch
+	}
+
 	forkBranch(name: string, fromSnapshotId?: string): WorkspaceBranch | null {
 		const workspace = this.getCurrentWorkspace()
 		if (!workspace) return null
@@ -323,6 +381,7 @@ export class WorkspaceManager extends BaseAgentAppManager {
 			createdAt: now,
 			parentSnapshotId: baseSnapshot?.id ?? currentBranch.headSnapshotId,
 			mergedFromBranchId: null,
+			mergedFromSnapshotId: null,
 			isAuto: false,
 			state: structuredClone(baseState),
 		}
@@ -376,6 +435,7 @@ export class WorkspaceManager extends BaseAgentAppManager {
 			createdAt: now,
 			parentSnapshotId: target.headSnapshotId,
 			mergedFromBranchId: source.id,
+			mergedFromSnapshotId: null,
 			isAuto: false,
 			state: structuredClone(mergedState),
 		}
@@ -407,6 +467,60 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		this.persistState()
 		if (workspace.currentBranchId === resolvedTargetBranchId) {
 			this.applyWorkspaceState(mergedState)
+		}
+		return true
+	}
+
+	mergeSnapshotIntoBranch(sourceBranchId: string, snapshotId: string, targetBranchId: string): boolean {
+		const workspace = this.getCurrentWorkspace()
+		if (!workspace) return false
+		const sourceBranch = workspace.branches[sourceBranchId]
+		if (!sourceBranch) return false
+		const targetBranch = workspace.branches[targetBranchId]
+		if (!targetBranch) return false
+		if (sourceBranchId === targetBranchId) return false
+		const sourceSnapshot = sourceBranch.snapshots.find((s) => s.id === snapshotId)
+		if (!sourceSnapshot) return false
+
+		const now = Date.now()
+		const mergeSnapshot: WorkspaceSnapshot = {
+			id: uniqueId(),
+			name: `Merge "${sourceSnapshot.name}" from "${sourceBranch.name}"`,
+			createdAt: now,
+			parentSnapshotId: targetBranch.headSnapshotId,
+			mergedFromBranchId: sourceBranchId,
+			mergedFromSnapshotId: snapshotId,
+			isAuto: false,
+			state: structuredClone(sourceSnapshot.state),
+		}
+
+		this.$workspaces.update((prev) => {
+			const current = prev[workspace.id]
+			if (!current) return prev
+			const currentTarget = current.branches[targetBranchId]
+			if (!currentTarget) return prev
+			return {
+				...prev,
+				[workspace.id]: {
+					...current,
+					updatedAt: now,
+					branches: {
+						...current.branches,
+						[targetBranchId]: {
+							...currentTarget,
+							updatedAt: now,
+							headSnapshotId: mergeSnapshot.id,
+							workingState: structuredClone(sourceSnapshot.state),
+							snapshots: [...currentTarget.snapshots, mergeSnapshot],
+						},
+					},
+				},
+			}
+		})
+
+		this.persistState()
+		if (workspace.currentBranchId === targetBranchId) {
+			this.applyWorkspaceState(sourceSnapshot.state)
 		}
 		return true
 	}
@@ -537,6 +651,7 @@ export class WorkspaceManager extends BaseAgentAppManager {
 			createdAt: now,
 			parentSnapshotId: null,
 			mergedFromBranchId: null,
+			mergedFromSnapshotId: null,
 			isAuto: false,
 			state: structuredClone(workingState),
 		}
