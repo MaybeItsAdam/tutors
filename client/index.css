@@ -352,6 +352,15 @@ body {
 	background: #f5f3ff;
 }
 
+.stc-btn--merge {
+	border-color: #fcd34d;
+	color: #92400e;
+}
+
+.stc-btn--merge:hover {
+	background: #fffbeb;
+}
+
 /* Fork dialog overlay */
 .stc-fork-dialog {
 	position: absolute;

@@ -11,6 +11,9 @@ const H_GAP = 52   // space between nodes (holds the arrow)
 const V_GAP = 76   // space between branch rows
 const STEP_X = NODE_W + H_GAP   // 236
 const STEP_Y = NODE_H + V_GAP   // 254
+// Forked branches start this many columns ahead of their fork point,
+// visually shifting them forward so they don't stack directly below the parent.
+const FORK_X_OFFSET = 0.42
 const PREVIEW_W = 160
 const PREVIEW_H = 80
 const BRANCH_LABEL_X = -12  // x offset for branch labels (right-aligned)
@@ -165,7 +168,7 @@ interface LayoutNode {
 }
 
 interface LayoutEdge {
-	type: 'sequence' | 'fork'
+	type: 'sequence' | 'fork' | 'merge'
 	x1: number; y1: number
 	x2: number; y2: number
 }
@@ -173,6 +176,7 @@ interface LayoutEdge {
 function computeLayout(branches: WorkspaceBranch[]) {
 	const sorted = [...branches].sort((a, b) => a.createdAt - b.createdAt)
 	const snapshotCol = new Map<string, number>()
+	const snapshotRow = new Map<string, number>()
 	const nodes: LayoutNode[] = []
 
 	for (let rowIdx = 0; rowIdx < sorted.length; rowIdx++) {
@@ -182,12 +186,13 @@ function computeLayout(branches: WorkspaceBranch[]) {
 		let startCol = 0
 		if (branch.forkedFromSnapshotId) {
 			const parentCol = snapshotCol.get(branch.forkedFromSnapshotId)
-			if (parentCol !== undefined) startCol = parentCol
+			if (parentCol !== undefined) startCol = parentCol + FORK_X_OFFSET
 		}
 
 		snaps.forEach((snap, i) => {
 			const col = startCol + i
 			snapshotCol.set(snap.id, col)
+			snapshotRow.set(snap.id, rowIdx)
 			nodes.push({
 				snapshotId: snap.id,
 				branchId: branch.id,
@@ -224,6 +229,7 @@ function computeLayout(branches: WorkspaceBranch[]) {
 			const src = nodes.find(n => n.snapshotId === branch.forkedFromSnapshotId)
 			const dst = nodes.find(n => n.snapshotId === snaps[0].id)
 			if (src && dst) {
+				// src is above dst (lower row index), arrow exits src bottom, enters dst top
 				edges.push({
 					type: 'fork',
 					x1: src.x + NODE_W / 2,
@@ -232,6 +238,25 @@ function computeLayout(branches: WorkspaceBranch[]) {
 					y2: dst.y,
 				})
 			}
+		}
+
+		// Merge edges: snapshot.mergedFromSnapshotId → this snapshot
+		for (const snap of snaps) {
+			if (!snap.mergedFromSnapshotId) continue
+			const src = nodes.find(n => n.snapshotId === snap.mergedFromSnapshotId)
+			const dst = nodes.find(n => n.snapshotId === snap.id)
+			if (!src || !dst) continue
+
+			const srcBelow = src.row > dst.row
+			edges.push({
+				type: 'merge',
+				// depart from the side of source closer to target row
+				x1: src.x + NODE_W / 2,
+				y1: srcBelow ? src.y : src.y + NODE_H,
+				// arrive at the far side of target
+				x2: dst.x + NODE_W / 2,
+				y2: srcBelow ? dst.y + NODE_H : dst.y,
+			})
 		}
 	}
 
@@ -277,6 +302,50 @@ function ForkDialog({
 				<div className="stc-fork-dialog-actions">
 					<button className="stc-btn stc-btn--primary" onClick={() => name.trim() && onConfirm(name.trim())} disabled={!name.trim()}>
 						Create branch
+					</button>
+					<button className="stc-btn" onClick={onCancel}>Cancel</button>
+				</div>
+			</div>
+		</div>
+	)
+}
+
+// ── Merge dialog ─────────────────────────────────────────────────────────────
+function MergeDialog({
+	sourceBranchId,
+	branches,
+	onConfirm,
+	onCancel,
+}: {
+	sourceBranchId: string
+	branches: WorkspaceBranch[]
+	onConfirm: (targetBranchId: string) => void
+	onCancel: () => void
+}) {
+	const targets = branches.filter(b => b.id !== sourceBranchId)
+	const [selected, setSelected] = useState(targets[0]?.id ?? '')
+
+	return (
+		<div className="stc-fork-dialog" onMouseDown={e => e.stopPropagation()}>
+			<div className="stc-fork-dialog-inner">
+				<div className="stc-fork-dialog-title">Merge into branch</div>
+				<select
+					className="stc-fork-input"
+					value={selected}
+					onChange={e => setSelected(e.target.value)}
+					autoFocus
+				>
+					{targets.map(b => (
+						<option key={b.id} value={b.id}>{b.name}</option>
+					))}
+				</select>
+				<div className="stc-fork-dialog-actions">
+					<button
+						className="stc-btn stc-btn--primary"
+						onClick={() => selected && onConfirm(selected)}
+						disabled={!selected}
+					>
+						Merge
 					</button>
 					<button className="stc-btn" onClick={onCancel}>Cancel</button>
 				</div>
@@ -332,8 +401,9 @@ export function WorkspaceTimelineView({
 	const dragOrigin = useRef<{ mx: number; my: number; px: number; py: number } | null>(null)
 	const viewportRef = useRef<HTMLDivElement>(null)
 
-	// Fork dialog state
+	// Fork / merge dialog state
 	const [forkTarget, setForkTarget] = useState<{ branchId: string; snapshotId: string } | null>(null)
+	const [mergeTarget, setMergeTarget] = useState<{ branchId: string; snapshotId: string } | null>(null)
 
 	const handleViewportMouseDown = useCallback((e: React.MouseEvent) => {
 		if (e.button !== 0) return
@@ -364,6 +434,12 @@ export function WorkspaceTimelineView({
 		app.workspaces.forkBranchFrom(name, forkTarget.branchId, forkTarget.snapshotId)
 		setForkTarget(null)
 	}, [app, forkTarget])
+
+	const handleMergeConfirm = useCallback((targetBranchId: string) => {
+		if (!mergeTarget) return
+		app.workspaces.mergeSnapshotIntoBranch(mergeTarget.branchId, mergeTarget.snapshotId, targetBranchId)
+		setMergeTarget(null)
+	}, [app, mergeTarget])
 
 	if (!workspace) return null
 
@@ -412,6 +488,7 @@ export function WorkspaceTimelineView({
 						<defs>
 							<ArrowMarker id="arrow-seq" color="#9ca3af" />
 							<ArrowMarker id="arrow-fork" color="#818cf8" />
+							<ArrowMarker id="arrow-merge" color="#f59e0b" />
 						</defs>
 
 						{/* Branch labels */}
@@ -437,7 +514,6 @@ export function WorkspaceTimelineView({
 						{/* Edges */}
 						{edges.map((edge, i) => {
 							if (edge.type === 'sequence') {
-								// Horizontal arrow
 								return (
 									<line
 										key={i}
@@ -451,11 +527,32 @@ export function WorkspaceTimelineView({
 									/>
 								)
 							}
-							// Fork: cubic bezier from bottom to top
+							if (edge.type === 'merge') {
+								// S-curve from source to merge target (orange)
+								const dy = edge.y2 - edge.y1
+								const cx1 = edge.x1
+								const cy1 = edge.y1 + dy * 0.45
+								const cx2 = edge.x2
+								const cy2 = edge.y1 + dy * 0.55
+								const ey2 = dy > 0 ? edge.y2 - 6 : edge.y2 + 6
+								return (
+									<path
+										key={i}
+										d={`M ${edge.x1} ${edge.y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${edge.x2} ${ey2}`}
+										stroke="#f59e0b"
+										strokeWidth="1.5"
+										fill="none"
+										strokeDasharray="4,3"
+										markerEnd="url(#arrow-merge)"
+									/>
+								)
+							}
+							// Fork: S-curve from bottom of source down-right to top of fork target
+							const dy = edge.y2 - edge.y1
 							const cx1 = edge.x1
-							const cy1 = edge.y1 + (edge.y2 - edge.y1) * 0.5
+							const cy1 = edge.y1 + dy * 0.45
 							const cx2 = edge.x2
-							const cy2 = edge.y1 + (edge.y2 - edge.y1) * 0.5
+							const cy2 = edge.y1 + dy * 0.55
 							return (
 								<path
 									key={i}
@@ -515,6 +612,13 @@ export function WorkspaceTimelineView({
 									>
 										Branch ↓
 									</button>
+									<button
+										className="stc-btn stc-btn--merge"
+										onClick={() => setMergeTarget({ branchId: node.branchId, snapshotId: node.snapshotId })}
+										title="Merge this snapshot into another branch"
+									>
+										Merge →
+									</button>
 								</div>
 							</div>
 						)
@@ -532,6 +636,16 @@ export function WorkspaceTimelineView({
 				<ForkDialog
 					onConfirm={handleForkConfirm}
 					onCancel={() => setForkTarget(null)}
+				/>
+			)}
+
+			{/* Merge dialog */}
+			{mergeTarget && (
+				<MergeDialog
+					sourceBranchId={mergeTarget.branchId}
+					branches={sortedBranches}
+					onConfirm={handleMergeConfirm}
+					onCancel={() => setMergeTarget(null)}
 				/>
 			)}
 		</div>
