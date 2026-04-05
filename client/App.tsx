@@ -31,8 +31,10 @@ import { TargetAreaTool } from './tools/TargetAreaTool'
 import { TargetShapeTool } from './tools/TargetShapeTool'
 import { MathTool } from './tools/MathTool'
 import { GraphTool } from './tools/GraphTool'
+import { Graph3dTool } from './tools/Graph3dTool'
 import { EquationShapeUtil } from './shapes/equation/EquationShapeUtil'
 import { GraphShapeUtil } from './shapes/graph/GraphShapeUtil'
+import { Graph3dShapeUtil } from './shapes/graph3d/Graph3dShapeUtil'
 import { PdfDocumentShapeUtil } from './shapes/pdf/PdfDocumentShapeUtil'
 import {
 	buildPdfPageAssetName,
@@ -90,11 +92,11 @@ async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y:
 }
 
 // Custom tools for picking context items
-const tools = [TargetShapeTool, TargetAreaTool, MathTool, GraphTool]
-const shapeUtils = [EquationShapeUtil, GraphShapeUtil, PdfDocumentShapeUtil]
+const tools = [TargetShapeTool, TargetAreaTool, MathTool, GraphTool, Graph3dTool]
+const shapeUtils = [EquationShapeUtil, GraphShapeUtil, Graph3dShapeUtil, PdfDocumentShapeUtil]
 const PINNED_CUSTOM_TOOLS_STORAGE_KEY = 'tutors.pinned-toolbar-tools'
-const PINNABLE_CUSTOM_TOOL_IDS = ['math', 'graph', 'target-area', 'target-shape'] as const
-const DEFAULT_PINNED_CUSTOM_TOOL_IDS: string[] = ['math']
+const PINNABLE_CUSTOM_TOOL_IDS = ['math', 'graph', 'graph3d', 'target-area', 'target-shape'] as const
+const DEFAULT_PINNED_CUSTOM_TOOL_IDS: string[] = ['math', 'graph3d']
 
 function getPinnedCustomToolIds(): string[] {
 	if (typeof window === 'undefined') return DEFAULT_PINNED_CUSTOM_TOOL_IDS
@@ -145,7 +147,7 @@ const overrides: TLUiOverrides = {
 				id: 'math',
 				label: 'Math (m)',
 				kbd: 'm',
-				icon: 'tool-text',
+				icon: 'tool-math',
 				onSelect() {
 					editor.setCurrentTool('math')
 				},
@@ -157,6 +159,15 @@ const overrides: TLUiOverrides = {
 				icon: 'tool-line',
 				onSelect() {
 					editor.setCurrentTool('graph')
+				},
+			},
+			'graph3d': {
+				id: 'graph3d',
+				label: '3D Graph',
+				kbd: '3',
+				icon: 'tool-3d',
+				onSelect() {
+					editor.setCurrentTool('graph3d')
 				},
 			},
 			'pdf-upload': {
@@ -320,6 +331,7 @@ function App() {
 				<div className="tldraw-canvas">
 					<Tldraw
 						persistenceKey="tldraw-agent-demo"
+						assetUrls={{ icons: { 'tool-math': '/icons/tool-math.svg', 'tool-3d': '/icons/tool-3d.svg' } }}
 						onMount={(editor) => {
 							editorRef.current = editor
 							// @ts-expect-error - Attach editor to window for debugging and testing

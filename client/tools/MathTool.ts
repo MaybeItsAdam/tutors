@@ -38,8 +38,10 @@ class MathIdle extends StateNode {
 			},
 		})
 
-		// Select the shape and set it to editing mode immediately
+		// Select the shape, enter editing mode, then return to select tool
+		// so the toolbar correctly reflects "select" while the user edits.
 		this.editor.select(id)
 		this.editor.setEditingShape(id)
+		this.editor.setCurrentTool('select')
 	}
 }
