@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
 	DefaultSizeStyle,
-	DefaultStylePanel,
 	DefaultToolbar,
 	DefaultToolbarContent,
-	ErrorBoundary,
 	TLComponents,
 	Tldraw,
 	TldrawOverlays,
@@ -18,13 +16,14 @@ import {
 	TldrawAgentAppContextProvider,
 	TldrawAgentAppProvider,
 } from './agent/TldrawAgentAppProvider'
-import { ChatPanel } from './components/ChatPanel'
-import { ChatPanelFallback } from './components/ChatPanelFallback'
 import { CustomHelperButtons } from './components/CustomHelperButtons'
 import { MathCheatSheet } from './components/MathCheatSheet'
 import { PlotGraphButton } from './components/PlotGraphButton'
 import { AgentViewportBoundsHighlights } from './components/highlights/AgentViewportBoundsHighlights'
 import { AllContextHighlights } from './components/highlights/ContextHighlights'
+import { DraggableChatPanel } from './components/panels/DraggableChatPanel'
+import { LayoutAwareStylePanel } from './components/panels/DraggableStylePanel'
+import { PanelLayoutProvider } from './components/panels/PanelLayoutContext'
 import { TargetAreaTool } from './tools/TargetAreaTool'
 import { TargetShapeTool } from './tools/TargetShapeTool'
 import { MathTool } from './tools/MathTool'
@@ -172,8 +171,6 @@ const overrides: TLUiOverrides = {
 }
 
 // Custom toolbar with user-configurable custom tool pins before default items.
-// Set localStorage["tutors.pinned-toolbar-tools"] = "math,graph,target-area,target-shape"
-// or use ?pinnedTools=math,target-area in the URL.
 function CustomToolbar({ pinnedToolIds }: { pinnedToolIds: string[] }) {
 	return (
 		<DefaultToolbar>
@@ -183,24 +180,6 @@ function CustomToolbar({ pinnedToolIds }: { pinnedToolIds: string[] }) {
 			<DefaultToolbarContent />
 			<TldrawUiMenuToolItem toolId="pdf-upload" />
 		</DefaultToolbar>
-	)
-}
-
-// Render the StylePanel shifted left so it doesn't overlap the floating chat panel.
-// The chat panel is 340px wide + 16px margin from the right edge = 356px total offset.
-const CHAT_PANEL_OFFSET = 340 + 16 + 8 // px from right edge where panel starts
-
-function OffsetStylePanel() {
-	return (
-		<div style={{
-			position: 'absolute',
-			top: 0,
-			right: CHAT_PANEL_OFFSET,
-			zIndex: 300,
-			pointerEvents: 'all',
-		}}>
-			<DefaultStylePanel />
-		</div>
 	)
 }
 
@@ -240,10 +219,9 @@ function App() {
 		setApp(null)
 	}, [])
 
-	// Global hotkey: h or ? toggles the Math cheat sheet
+	// Global hotkey: ? toggles the Math cheat sheet
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
-			// Don't trigger when the user is typing in an input
 			const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
 			if (tag === 'input' || tag === 'textarea' || (e.target as HTMLElement)?.isContentEditable) return
 			if (e.key === '?') {
@@ -255,12 +233,11 @@ function App() {
 		return () => window.removeEventListener('keydown', handler)
 	}, [])
 
-	// Custom components to visualize what the agent is doing
-	// These use TldrawAgentAppContextProvider to access the app/agent
+	// tldraw components — StylePanel is null because we render our own draggable version in Overlays
 	const components: TLComponents = useMemo(() => {
 		return {
 			Toolbar: () => <CustomToolbar pinnedToolIds={pinnedToolIds} />,
-			StylePanel: OffsetStylePanel,
+			StylePanel: null,
 			HelperButtons: () =>
 				app && (
 					<TldrawAgentAppContextProvider app={app}>
@@ -271,6 +248,7 @@ function App() {
 				<>
 					<TldrawOverlays />
 					<PlotGraphButton />
+					<LayoutAwareStylePanel />
 					{app && (
 						<TldrawAgentAppContextProvider app={app}>
 							<AgentViewportBoundsHighlights />
@@ -283,70 +261,76 @@ function App() {
 	}, [app, pinnedToolIds])
 
 	return (
-		<TldrawUiToastsProvider>
-			<input
-				id="pdf-upload-input"
-				type="file"
-				accept="application/pdf"
-				multiple
-				style={{ display: 'none' }}
-				onChange={handlePdfInputChange}
-			/>
-			<div className="tldraw-agent-container">
-				<div className="tldraw-canvas">
-					<Tldraw
-						persistenceKey="tldraw-agent-demo"
-						onMount={(editor) => {
-							editorRef.current = editor
-							// @ts-expect-error - Attach editor to window for debugging and testing
-							window.editor = editor
+		<PanelLayoutProvider>
+			<TldrawUiToastsProvider>
+				<input
+					id="pdf-upload-input"
+					type="file"
+					accept="application/pdf"
+					multiple
+					style={{ display: 'none' }}
+					onChange={handlePdfInputChange}
+				/>
+				<div className="tldraw-agent-container">
+					<div className="tldraw-canvas">
+						<Tldraw
+							persistenceKey="tldraw-agent-demo"
+							onMount={(editor) => {
+								editorRef.current = editor
+								// @ts-expect-error - Attach editor to window for debugging and testing
+								window.editor = editor
 
-							const handleDrop = async (e: DragEvent) => {
-								if (!e.dataTransfer?.files.length) return
-								const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf')
-								if (!files.length) return
+								const handleDrop = async (e: DragEvent) => {
+									if (!e.dataTransfer?.files.length) return
+									const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf')
+									if (!files.length) return
 
-								e.preventDefault()
-								e.stopPropagation()
+									e.preventDefault()
+									e.stopPropagation()
 
-								const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
+									const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
 
-								for (let i = 0; i < files.length; i++) {
-									try {
-										await addPdfToCanvas(editor, files[i], {
-											x: point.x + i * PDF_PLACEMENT_CASCADE_OFFSET,
-											y: point.y + i * PDF_PLACEMENT_CASCADE_OFFSET,
-										})
-									} catch (err) {
-										console.error('Failed to process PDF', err)
+									for (let i = 0; i < files.length; i++) {
+										try {
+											await addPdfToCanvas(editor, files[i], {
+												x: point.x + i * PDF_PLACEMENT_CASCADE_OFFSET,
+												y: point.y + i * PDF_PLACEMENT_CASCADE_OFFSET,
+											})
+										} catch (err) {
+											console.error('Failed to process PDF', err)
+										}
 									}
 								}
-							}
-							
-							const container = document.querySelector('.tldraw-agent-container')
-							if (container) {
-								container.addEventListener('drop', handleDrop as any, { capture: true })
-								container.addEventListener('dragover', (e) => e.preventDefault(), { capture: true })
-							}
-						}}
-						tools={tools}
-						shapeUtils={shapeUtils}
-						overrides={overrides}
-						components={components}
-					>
-						<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
-					</Tldraw>
+
+								const handleDragOver = (e: Event) => e.preventDefault()
+
+								const container = document.querySelector('.tldraw-agent-container')
+								if (container) {
+									container.addEventListener('drop', handleDrop as any, { capture: true })
+									container.addEventListener('dragover', handleDragOver, { capture: true })
+								}
+
+								return () => {
+									if (container) {
+										container.removeEventListener('drop', handleDrop as any, { capture: true })
+										container.removeEventListener('dragover', handleDragOver, { capture: true })
+									}
+								}
+							}}
+							tools={tools}
+							shapeUtils={shapeUtils}
+							overrides={overrides}
+							components={components}
+						>
+							<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
+						</Tldraw>
+					</div>
+					{/* Chat panel rendered outside tldraw — it has its own agent context */}
+					{app && <DraggableChatPanel app={app} />}
 				</div>
-				<ErrorBoundary fallback={ChatPanelFallback}>
-					{app && (
-						<TldrawAgentAppContextProvider app={app}>
-							<ChatPanel />
-						</TldrawAgentAppContextProvider>
-					)}
-				</ErrorBoundary>
-			</div>
-			{showCheatSheet && <MathCheatSheet onClose={() => setShowCheatSheet(false)} />}
-		</TldrawUiToastsProvider>
+				{showCheatSheet && <MathCheatSheet onClose={() => setShowCheatSheet(false)} />}
+			</TldrawUiToastsProvider>
+		</PanelLayoutProvider>
 	)
 }
 

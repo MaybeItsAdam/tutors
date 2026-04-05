@@ -151,19 +151,23 @@ export class AgentService {
 				if (actions.length === 0) continue
 
 				if (actions.length > cursor) {
-					const action = actions[cursor - 1] as AgentAction
-					if (action) {
-						yield {
-							...action,
-							complete: true,
-							time: Date.now() - startTime,
+					// Emit the previous action as complete (skip when cursor==0, there's no previous)
+					if (cursor > 0) {
+						const prevAction = actions[cursor - 1] as AgentAction
+						if (prevAction) {
+							yield {
+								...prevAction,
+								complete: true,
+								time: Date.now() - startTime,
+							}
 						}
-						maybeIncompleteAction = null
 					}
+					maybeIncompleteAction = null
 					cursor++
+					startTime = Date.now()
 				}
 
-				const action = actions[cursor - 1] as AgentAction
+				const action = actions[cursor - 1] as AgentAction | undefined
 				if (action) {
 					if (!maybeIncompleteAction) {
 						startTime = Date.now()

@@ -85,11 +85,9 @@ export function ChatInput({
 					onKeyDown={(e) => {
 						if (e.key === 'Enter' && !e.shiftKey) {
 							e.preventDefault()
-							//idk about this but it works oops -max
 							const form = e.currentTarget.closest('form')
 							if (form) {
-								const submitEvent = new Event('submit', { bubbles: true, cancelable: true })
-								form.dispatchEvent(submitEvent)
+								form.requestSubmit()
 							}
 						}
 					}}

@@ -440,7 +440,10 @@ function GraphRenderer({
 	}, [editor, expectedSliders, shape.id, slidersDiffer])
 
 	const evaluateExpression = useMemo(() => createExpressionEvaluator(sliders), [sliders])
-	const intersections = findIntersections(functionsToPlot, sliders, xMin, xMax)
+	const intersections = useMemo(
+		() => findIntersections(functionsToPlot, sliders, xMin, xMax),
+		[functionsToPlot, sliders, xMin, xMax]
+	)
 
 	const handleInputKeyDown = (e: React.KeyboardEvent) => {
 		if (e.key === 'Enter' || e.key === 'Escape') {

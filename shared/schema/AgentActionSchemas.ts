@@ -282,7 +282,6 @@ export type ReviewAction = z.infer<typeof ReviewAction>
 export const RotateAction = z
 	.object({
 		_type: z.literal('rotate'),
-		centerY: z.number(),
 		degrees: z.number(),
 		intent: z.string(),
 		originX: z.number(),

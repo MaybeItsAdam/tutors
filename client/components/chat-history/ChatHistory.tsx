@@ -77,9 +77,12 @@ export function ChatHistory({ agent }: { agent: TldrawAgent }) {
 	return (
 		<div className="chat-history" ref={historyRef} onScroll={handleScroll}>
 			{sections.map((section, i) => {
+				// Use prompt content + index for a more stable key than index alone
+				const sectionKey =
+					section.prompt.agentFacingMessage.slice(0, 64) + '-' + i
 				return (
 					<ChatHistorySection
-						key={'history-section-' + i}
+						key={sectionKey}
 						section={section}
 						loading={i === sections.length - 1 && isGenerating}
 					/>

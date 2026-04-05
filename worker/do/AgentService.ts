@@ -153,16 +153,20 @@ export class AgentService {
 				// If the events list is ahead of the cursor, we know we've completed the current event
 				// We can complete the event and move the cursor forward
 				if (actions.length > cursor) {
-					const action = actions[cursor - 1] as AgentAction
-					if (action) {
-						yield {
-							...action,
-							complete: true,
-							time: Date.now() - startTime,
+					// Emit the previous action as complete (skip when cursor==0, there's no previous)
+					if (cursor > 0) {
+						const prevAction = actions[cursor - 1] as AgentAction
+						if (prevAction) {
+							yield {
+								...prevAction,
+								complete: true,
+								time: Date.now() - startTime,
+							}
 						}
-						maybeIncompleteAction = null
 					}
+					maybeIncompleteAction = null
 					cursor++
+					startTime = Date.now()
 				}
 
 				// Now let's check the (potentially new) current event

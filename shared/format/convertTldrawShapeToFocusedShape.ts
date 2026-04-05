@@ -205,10 +205,7 @@ function convertLineShapeToFocused(editor: Editor, shape: TLLineShape): FocusedL
 
 function convertArrowShapeToFocused(editor: Editor, shape: TLArrowShape): FocusedArrowShape {
 	const bounds = getSimpleBounds(editor, shape)
-	const bindings = editor.store.query.records('binding').get()
-	const arrowBindings = bindings.filter(
-		(b) => b.type === 'arrow' && b.fromId === shape.id
-	) as TLArrowBinding[]
+	const arrowBindings = editor.getBindingsFromShape(shape.id, 'arrow') as TLArrowBinding[]
 	const startBinding = arrowBindings.find((b) => b.props.terminal === 'start')
 	const endBinding = arrowBindings.find((b) => b.props.terminal === 'end')
 

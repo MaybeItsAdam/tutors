@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import json
 import os
+import litellm
 import llm_service
 
 load_dotenv()
@@ -27,7 +28,7 @@ app = FastAPI(
 # CORS — allow the Vite dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:7072", "http://127.0.0.1:7072"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,13 +88,25 @@ async def websocket_chat(websocket: WebSocket):
             data = await websocket.receive_text()
             message = json.loads(data)
 
-            # TODO: Implement streaming LLM response in Step 4
-            await websocket.send_json({
-                "type": "text",
-                "data": {
-                    "message": "WebSocket endpoint ready. Streaming LLM integration coming in Step 4."
-                },
-            })
+            api_key = message.get("apiKey")
+            provider = message.get("provider")
+            model = message.get("model")
+            messages = message.get("messages", [])
+
+            if not api_key or not provider:
+                await websocket.send_json({"error": "Missing apiKey or provider in message"})
+                continue
+
+            litellm_model = f"{provider}/{model}"
+
+            try:
+                async for chunk in llm_service.stream_agent_actions(
+                    model=litellm_model, messages=messages, api_key=api_key
+                ):
+                    await websocket.send_text(chunk)
+            except Exception as e:
+                await websocket.send_json({"error": str(e)})
+
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -116,5 +129,25 @@ async def test_key(request: Request):
     if not api_key or not provider:
         raise HTTPException(status_code=400, detail="Missing X-API-Key or X-Provider header")
 
-    # TODO: Implement key validation in Step 4
-    return {"status": "ok", "provider": provider, "valid": True}
+    # Map provider to a litellm model for a minimal validation call
+    test_models = {
+        "openai": "openai/gpt-4o-mini",
+        "anthropic": "anthropic/claude-haiku-4-5-20251001",
+        "gemini": "gemini/gemini-2.0-flash",
+        "google": "google/gemini-2.0-flash",
+    }
+
+    litellm_model = test_models.get(provider)
+    if not litellm_model:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+
+    try:
+        response = await litellm.acompletion(
+            model=litellm_model,
+            messages=[{"role": "user", "content": "hi"}],
+            api_key=api_key,
+            max_tokens=1,
+        )
+        return {"status": "ok", "provider": provider, "valid": True}
+    except Exception as e:
+        return {"status": "error", "provider": provider, "valid": False, "error": str(e)}
