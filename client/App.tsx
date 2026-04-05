@@ -19,6 +19,8 @@ import {
 import { CustomHelperButtons } from './components/CustomHelperButtons'
 import { MathCheatSheet } from './components/MathCheatSheet'
 import { PlotGraphButton } from './components/PlotGraphButton'
+import { WorkspaceLandingPage } from './components/WorkspaceLandingPage'
+import { WorkspaceTimelineView } from './components/WorkspaceTimelineView'
 import { AgentViewportBoundsHighlights } from './components/highlights/AgentViewportBoundsHighlights'
 import { AllContextHighlights } from './components/highlights/ContextHighlights'
 import { DraggableChatPanel } from './components/panels/DraggableChatPanel'
@@ -28,8 +30,14 @@ import { TargetAreaTool } from './tools/TargetAreaTool'
 import { TargetShapeTool } from './tools/TargetShapeTool'
 import { MathTool } from './tools/MathTool'
 import { GraphTool } from './tools/GraphTool'
+import { Graph3dTool } from './tools/Graph3dTool'
+import { VectorFieldTool } from './tools/VectorFieldTool'
+import { ComplexPlaneTool } from './tools/ComplexPlaneTool'
 import { EquationShapeUtil } from './shapes/equation/EquationShapeUtil'
 import { GraphShapeUtil } from './shapes/graph/GraphShapeUtil'
+import { Graph3dShapeUtil } from './shapes/graph3d/Graph3dShapeUtil'
+import { VectorFieldShapeUtil } from './shapes/vectorfield/VectorFieldShapeUtil'
+import { ComplexPlaneShapeUtil } from './shapes/complexplane/ComplexPlaneShapeUtil'
 import { PdfDocumentShapeUtil } from './shapes/pdf/PdfDocumentShapeUtil'
 import {
 	buildPdfPageAssetName,
@@ -87,11 +95,11 @@ async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y:
 }
 
 // Custom tools for picking context items
-const tools = [TargetShapeTool, TargetAreaTool, MathTool, GraphTool]
-const shapeUtils = [EquationShapeUtil, GraphShapeUtil, PdfDocumentShapeUtil]
+const tools = [TargetShapeTool, TargetAreaTool, MathTool, GraphTool, Graph3dTool, VectorFieldTool, ComplexPlaneTool]
+const shapeUtils = [EquationShapeUtil, GraphShapeUtil, Graph3dShapeUtil, VectorFieldShapeUtil, ComplexPlaneShapeUtil, PdfDocumentShapeUtil]
 const PINNED_CUSTOM_TOOLS_STORAGE_KEY = 'tutors.pinned-toolbar-tools'
-const PINNABLE_CUSTOM_TOOL_IDS = ['math', 'graph', 'target-area', 'target-shape'] as const
-const DEFAULT_PINNED_CUSTOM_TOOL_IDS: string[] = ['math']
+const PINNABLE_CUSTOM_TOOL_IDS = ['math', 'graph', 'graph3d', 'vectorfield', 'complexplane', 'target-area', 'target-shape'] as const
+const DEFAULT_PINNED_CUSTOM_TOOL_IDS: string[] = ['math', 'graph3d', 'vectorfield', 'complexplane']
 
 function getPinnedCustomToolIds(): string[] {
 	if (typeof window === 'undefined') return DEFAULT_PINNED_CUSTOM_TOOL_IDS
@@ -142,7 +150,7 @@ const overrides: TLUiOverrides = {
 				id: 'math',
 				label: 'Math (m)',
 				kbd: 'm',
-				icon: 'tool-text',
+				icon: 'tool-math',
 				onSelect() {
 					editor.setCurrentTool('math')
 				},
@@ -154,6 +162,33 @@ const overrides: TLUiOverrides = {
 				icon: 'tool-line',
 				onSelect() {
 					editor.setCurrentTool('graph')
+				},
+			},
+			'graph3d': {
+				id: 'graph3d',
+				label: '3D Graph',
+				kbd: '3',
+				icon: 'tool-3d',
+				onSelect() {
+					editor.setCurrentTool('graph3d')
+				},
+			},
+			'vectorfield': {
+				id: 'vectorfield',
+				label: 'Vector Field (v)',
+				kbd: 'v',
+				icon: 'tool-vector',
+				onSelect() {
+					editor.setCurrentTool('vectorfield')
+				},
+			},
+			'complexplane': {
+				id: 'complexplane',
+				label: 'Complex Plane (c)',
+				kbd: 'c',
+				icon: 'tool-complex',
+				onSelect() {
+					editor.setCurrentTool('complexplane')
 				},
 			},
 			'pdf-upload': {
@@ -186,6 +221,8 @@ function CustomToolbar({ pinnedToolIds }: { pinnedToolIds: string[] }) {
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
 	const [showCheatSheet, setShowCheatSheet] = useState(false)
+	const [uiView, setUiView] = useState<'landing' | 'timeline' | 'editor'>('editor')
+	const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
 	const editorRef = useRef<Editor | null>(null)
 
 	const handlePdfInputChange = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
@@ -218,6 +255,26 @@ function App() {
 	const handleUnmount = useCallback(() => {
 		setApp(null)
 	}, [])
+
+	const handleBack = useCallback(() => {
+		setUiView((prev) => (prev === 'editor' ? 'timeline' : 'landing'))
+	}, [])
+
+	const handleCreateSnapshot = useCallback(() => {
+		if (!app) return
+		const snapshot = app.workspaces.createSnapshot()
+		if (!snapshot) return
+		const workspaceId = app.workspaces.getCurrentWorkspaceId()
+		if (workspaceId) setSelectedWorkspaceId(workspaceId)
+		setUiView('timeline')
+	}, [app])
+
+	const currentWorkspaceForTimeline = useMemo(() => {
+		if (!app) return null
+		const workspaces = app.workspaces.getWorkspaces()
+		const targetId = selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId()
+		return workspaces.find((w) => w.id === targetId) ?? app.workspaces.getCurrentWorkspace()
+	}, [app, selectedWorkspaceId])
 
 	// Global hotkey: ? toggles the Math cheat sheet
 	useEffect(() => {
@@ -261,6 +318,7 @@ function App() {
 	}, [app, pinnedToolIds])
 
 	return (
+<<<<<<< HEAD
 		<PanelLayoutProvider>
 			<TldrawUiToastsProvider>
 				<input
@@ -279,6 +337,26 @@ function App() {
 								editorRef.current = editor
 								// @ts-expect-error - Attach editor to window for debugging and testing
 								window.editor = editor
+=======
+		<TldrawUiToastsProvider>
+			<input
+				id="pdf-upload-input"
+				type="file"
+				accept="application/pdf"
+				multiple
+				style={{ display: 'none' }}
+				onChange={handlePdfInputChange}
+			/>
+			<div className="tldraw-agent-container">
+				<div className="tldraw-canvas">
+					<Tldraw
+						persistenceKey="tldraw-agent-demo"
+						assetUrls={{ icons: { 'tool-math': '/icons/tool-math.svg', 'tool-3d': '/icons/tool-3d.svg', 'tool-vector': '/icons/tool-vector.svg', 'tool-complex': '/icons/tool-complex.svg' } }}
+						onMount={(editor) => {
+							editorRef.current = editor
+							// @ts-expect-error - Attach editor to window for debugging and testing
+							window.editor = editor
+>>>>>>> 3341949ae5145a273bf67461c3c391bf694fe426
 
 								const handleDrop = async (e: DragEvent) => {
 									if (!e.dataTransfer?.files.length) return
@@ -301,6 +379,7 @@ function App() {
 										}
 									}
 								}
+<<<<<<< HEAD
 
 								const handleDragOver = (e: Event) => e.preventDefault()
 
@@ -331,6 +410,87 @@ function App() {
 				{showCheatSheet && <MathCheatSheet onClose={() => setShowCheatSheet(false)} />}
 			</TldrawUiToastsProvider>
 		</PanelLayoutProvider>
+=======
+							}
+							
+							const container = document.querySelector('.tldraw-agent-container')
+							if (container) {
+								container.addEventListener('drop', handleDrop as any, { capture: true })
+								container.addEventListener('dragover', (e) => e.preventDefault(), { capture: true })
+							}
+						}}
+						tools={tools}
+						shapeUtils={shapeUtils}
+						overrides={overrides}
+						components={components}
+					>
+						<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
+					</Tldraw>
+					{app && uiView === 'editor' && (
+						<button className="workspace-back-arrow" onClick={handleBack} title="Back">
+							←
+						</button>
+					)}
+					{app && uiView === 'editor' && (
+						<button
+							className="workspace-snapshot-fab"
+							onClick={handleCreateSnapshot}
+							title="Create snapshot"
+						>
+							Snapshot
+						</button>
+					)}
+				</div>
+				{app && uiView === 'editor' && (
+					<ErrorBoundary fallback={ChatPanelFallback}>
+						<TldrawAgentAppContextProvider app={app}>
+							<ChatPanel />
+						</TldrawAgentAppContextProvider>
+					</ErrorBoundary>
+				)}
+				{app && uiView === 'landing' && (
+					<TldrawAgentAppContextProvider app={app}>
+						<WorkspaceLandingPage
+							workspaces={app.workspaces.getWorkspaces()}
+							onSelectWorkspace={(workspaceId) => {
+								app.workspaces.switchWorkspace(workspaceId)
+								setSelectedWorkspaceId(workspaceId)
+								setUiView('timeline')
+							}}
+							onCreateWorkspace={(name) => {
+								const workspace = app.workspaces.createWorkspace(name)
+								setSelectedWorkspaceId(workspace.id)
+								setUiView('timeline')
+							}}
+						/>
+					</TldrawAgentAppContextProvider>
+				)}
+				{app && uiView === 'timeline' && (
+					<TldrawAgentAppContextProvider app={app}>
+						{currentWorkspaceForTimeline && (
+							<WorkspaceTimelineView
+								workspaceId={currentWorkspaceForTimeline.id}
+								onContinueLatest={() => {
+									const didRestore = app.workspaces.restoreLatestSnapshot(
+										currentWorkspaceForTimeline.id
+									)
+									if (didRestore) {
+										setUiView('editor')
+									}
+								}}
+								onOpenEditor={() => setUiView('editor')}
+								onRestoreSnapshot={(branchId, snapshotId) => {
+									const didRestore = app.workspaces.restoreSnapshot(branchId, snapshotId)
+									if (didRestore) setUiView('editor')
+								}}
+							/>
+						)}
+					</TldrawAgentAppContextProvider>
+				)}
+			</div>
+			{showCheatSheet && <MathCheatSheet onClose={() => setShowCheatSheet(false)} />}
+		</TldrawUiToastsProvider>
+>>>>>>> 3341949ae5145a273bf67461c3c391bf694fe426
 	)
 }
 
