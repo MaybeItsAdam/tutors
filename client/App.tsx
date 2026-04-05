@@ -10,12 +10,15 @@ import {
 	TldrawUiToastsProvider,
 	TLUiOverrides,
 	Editor,
+	ErrorBoundary,
 } from 'tldraw'
 import { TldrawAgentApp } from './agent/TldrawAgentApp'
 import {
 	TldrawAgentAppContextProvider,
 	TldrawAgentAppProvider,
 } from './agent/TldrawAgentAppProvider'
+import { ChatPanel } from './components/ChatPanel'
+import { ChatPanelFallback } from './components/ChatPanelFallback'
 import { CustomHelperButtons } from './components/CustomHelperButtons'
 import { MathCheatSheet } from './components/MathCheatSheet'
 import { PlotGraphButton } from './components/PlotGraphButton'
@@ -23,9 +26,6 @@ import { WorkspaceLandingPage } from './components/WorkspaceLandingPage'
 import { WorkspaceTimelineView } from './components/WorkspaceTimelineView'
 import { AgentViewportBoundsHighlights } from './components/highlights/AgentViewportBoundsHighlights'
 import { AllContextHighlights } from './components/highlights/ContextHighlights'
-import { DraggableChatPanel } from './components/panels/DraggableChatPanel'
-import { LayoutAwareStylePanel } from './components/panels/DraggableStylePanel'
-import { PanelLayoutProvider } from './components/panels/PanelLayoutContext'
 import { TargetAreaTool } from './tools/TargetAreaTool'
 import { TargetShapeTool } from './tools/TargetShapeTool'
 import { MathTool } from './tools/MathTool'
@@ -150,7 +150,7 @@ const overrides: TLUiOverrides = {
 				id: 'math',
 				label: 'Math (m)',
 				kbd: 'm',
-				icon: 'tool-math',
+				icon: 'tool-text',
 				onSelect() {
 					editor.setCurrentTool('math')
 				},
@@ -168,7 +168,7 @@ const overrides: TLUiOverrides = {
 				id: 'graph3d',
 				label: '3D Graph',
 				kbd: '3',
-				icon: 'tool-3d',
+				icon: 'tool-line',
 				onSelect() {
 					editor.setCurrentTool('graph3d')
 				},
@@ -177,7 +177,7 @@ const overrides: TLUiOverrides = {
 				id: 'vectorfield',
 				label: 'Vector Field (v)',
 				kbd: 'v',
-				icon: 'tool-vector',
+				icon: 'tool-arrow',
 				onSelect() {
 					editor.setCurrentTool('vectorfield')
 				},
@@ -186,7 +186,7 @@ const overrides: TLUiOverrides = {
 				id: 'complexplane',
 				label: 'Complex Plane (c)',
 				kbd: 'c',
-				icon: 'tool-complex',
+				icon: 'tool-ellipse',
 				onSelect() {
 					editor.setCurrentTool('complexplane')
 				},
@@ -294,7 +294,6 @@ function App() {
 	const components: TLComponents = useMemo(() => {
 		return {
 			Toolbar: () => <CustomToolbar pinnedToolIds={pinnedToolIds} />,
-			StylePanel: null,
 			HelperButtons: () =>
 				app && (
 					<TldrawAgentAppContextProvider app={app}>
@@ -305,7 +304,6 @@ function App() {
 				<>
 					<TldrawOverlays />
 					<PlotGraphButton />
-					<LayoutAwareStylePanel />
 					{app && (
 						<TldrawAgentAppContextProvider app={app}>
 							<AgentViewportBoundsHighlights />
@@ -318,26 +316,6 @@ function App() {
 	}, [app, pinnedToolIds])
 
 	return (
-<<<<<<< HEAD
-		<PanelLayoutProvider>
-			<TldrawUiToastsProvider>
-				<input
-					id="pdf-upload-input"
-					type="file"
-					accept="application/pdf"
-					multiple
-					style={{ display: 'none' }}
-					onChange={handlePdfInputChange}
-				/>
-				<div className="tldraw-agent-container">
-					<div className="tldraw-canvas">
-						<Tldraw
-							persistenceKey="tldraw-agent-demo"
-							onMount={(editor) => {
-								editorRef.current = editor
-								// @ts-expect-error - Attach editor to window for debugging and testing
-								window.editor = editor
-=======
 		<TldrawUiToastsProvider>
 			<input
 				id="pdf-upload-input"
@@ -351,72 +329,46 @@ function App() {
 				<div className="tldraw-canvas">
 					<Tldraw
 						persistenceKey="tldraw-agent-demo"
-						assetUrls={{ icons: { 'tool-math': '/icons/tool-math.svg', 'tool-3d': '/icons/tool-3d.svg', 'tool-vector': '/icons/tool-vector.svg', 'tool-complex': '/icons/tool-complex.svg' } }}
 						onMount={(editor) => {
 							editorRef.current = editor
 							// @ts-expect-error - Attach editor to window for debugging and testing
 							window.editor = editor
->>>>>>> 3341949ae5145a273bf67461c3c391bf694fe426
 
-								const handleDrop = async (e: DragEvent) => {
-									if (!e.dataTransfer?.files.length) return
-									const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf')
-									if (!files.length) return
+							const handleDrop = async (e: DragEvent) => {
+								if (!e.dataTransfer?.files.length) return
+								const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf')
+								if (!files.length) return
 
-									e.preventDefault()
-									e.stopPropagation()
+								e.preventDefault()
+								e.stopPropagation()
 
-									const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
+								const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
 
-									for (let i = 0; i < files.length; i++) {
-										try {
-											await addPdfToCanvas(editor, files[i], {
-												x: point.x + i * PDF_PLACEMENT_CASCADE_OFFSET,
-												y: point.y + i * PDF_PLACEMENT_CASCADE_OFFSET,
-											})
-										} catch (err) {
-											console.error('Failed to process PDF', err)
-										}
+								for (let i = 0; i < files.length; i++) {
+									try {
+										await addPdfToCanvas(editor, files[i], {
+											x: point.x + i * PDF_PLACEMENT_CASCADE_OFFSET,
+											y: point.y + i * PDF_PLACEMENT_CASCADE_OFFSET,
+										})
+									} catch (err) {
+										console.error('Failed to process PDF', err)
 									}
 								}
-<<<<<<< HEAD
-
-								const handleDragOver = (e: Event) => e.preventDefault()
-
-								const container = document.querySelector('.tldraw-agent-container')
-								if (container) {
-									container.addEventListener('drop', handleDrop as any, { capture: true })
-									container.addEventListener('dragover', handleDragOver, { capture: true })
-								}
-
-								return () => {
-									if (container) {
-										container.removeEventListener('drop', handleDrop as any, { capture: true })
-										container.removeEventListener('dragover', handleDragOver, { capture: true })
-									}
-								}
-							}}
-							tools={tools}
-							shapeUtils={shapeUtils}
-							overrides={overrides}
-							components={components}
-						>
-							<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
-						</Tldraw>
-					</div>
-					{/* Chat panel rendered outside tldraw — it has its own agent context */}
-					{app && <DraggableChatPanel app={app} />}
-				</div>
-				{showCheatSheet && <MathCheatSheet onClose={() => setShowCheatSheet(false)} />}
-			</TldrawUiToastsProvider>
-		</PanelLayoutProvider>
-=======
 							}
-							
+
+							const handleDragOver = (e: Event) => e.preventDefault()
+
 							const container = document.querySelector('.tldraw-agent-container')
 							if (container) {
 								container.addEventListener('drop', handleDrop as any, { capture: true })
-								container.addEventListener('dragover', (e) => e.preventDefault(), { capture: true })
+								container.addEventListener('dragover', handleDragOver, { capture: true })
+							}
+
+							return () => {
+								if (container) {
+									container.removeEventListener('drop', handleDrop as any, { capture: true })
+									container.removeEventListener('dragover', handleDragOver, { capture: true })
+								}
 							}
 						}}
 						tools={tools}
@@ -474,9 +426,7 @@ function App() {
 									const didRestore = app.workspaces.restoreLatestSnapshot(
 										currentWorkspaceForTimeline.id
 									)
-									if (didRestore) {
-										setUiView('editor')
-									}
+									if (didRestore) setUiView('editor')
 								}}
 								onOpenEditor={() => setUiView('editor')}
 								onRestoreSnapshot={(branchId, snapshotId) => {
@@ -490,7 +440,6 @@ function App() {
 			</div>
 			{showCheatSheet && <MathCheatSheet onClose={() => setShowCheatSheet(false)} />}
 		</TldrawUiToastsProvider>
->>>>>>> 3341949ae5145a273bf67461c3c391bf694fe426
 	)
 }
 
