@@ -403,7 +403,7 @@ function App() {
 					<TldrawAgentAppContextProvider app={app}>
 						{currentWorkspaceForTimeline && (
 							<WorkspaceTimelineView
-								workspace={currentWorkspaceForTimeline}
+								workspaceId={currentWorkspaceForTimeline.id}
 								onContinueLatest={() => {
 									const didRestore = app.workspaces.restoreLatestSnapshot(
 										currentWorkspaceForTimeline.id
@@ -413,6 +413,10 @@ function App() {
 									}
 								}}
 								onOpenEditor={() => setUiView('editor')}
+								onRestoreSnapshot={(branchId, snapshotId) => {
+									const didRestore = app.workspaces.restoreSnapshot(branchId, snapshotId)
+									if (didRestore) setUiView('editor')
+								}}
 							/>
 						)}
 					</TldrawAgentAppContextProvider>
