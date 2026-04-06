@@ -30,8 +30,8 @@ export const EquationAction = z
 		_type: z.literal('equation'),
 		intent: z.string(),
 		latex: z.string(),
-		x: z.number(),
-		y: z.number(),
+		x: z.number().optional(),
+		y: z.number().optional(),
 	})
 	.meta({
 		title: 'Equation',

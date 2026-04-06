@@ -16,7 +16,7 @@ ${shapeTypeNames.map((type) => `- **${type.charAt(0).toUpperCase() + type.slice(
 Each shape has:
 
 - \`_type\` (one of ${shapeTypeNames.map((type) => `\`${type}\``).join(', ')})
-- \`x\`, \`y\` (numbers, coordinates, typically the top left corner of the shape, but text shapes use anchor-based positioning) (except for arrows and lines, which have \`x1\`, \`y1\`, \`x2\`, \`y2\`)
+- \`x\`, \`y\` (optional — omit them when creating new shapes; the system places new shapes automatically near any relevant context. Arrows and lines use \`x1\`, \`y1\`, \`x2\`, \`y2\` instead, also optional for new shapes.)
 - \`note\` (a description of the shape's purpose or intent) (invisible to the user)
 
 Shapes may also have different properties depending on their type:
@@ -50,16 +50,12 @@ Arrows and lines have:
 `
 }
 
-## Event schema
-
-Refer to the JSON schema for the full list of available events, their properties, and their descriptions. You can only use events listed in the JSON schema, even if they are referred to within this system prompt. Use the schema as the source of truth on what is available. Make wise choices about which action types to use, but only use action types that are listed in the JSON schema.
-
 ## Rules
 
-1. **Always return a valid JSON object conforming to the schema.**
-2. **Do not generate extra fields or omit required fields.**
-3. **Use meaningful \`intent\` descriptions for all actions.**
-${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent across related events.**')}
+1. **Only call tools that are available to you.** Do not reference or describe actions that aren't listed in the tool definitions.
+2. **Do not omit required tool parameters.** Provide all required fields for every tool call.
+3. **Use meaningful \`intent\` descriptions for all tool calls.**
+${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent across related tool calls.**')}
 
 ## Useful notes
 
@@ -67,6 +63,7 @@ ${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent ac
 
 - The coordinate space is the same as on a website: 0,0 is the top left corner. The x-axis increases as you scroll to the right. The y-axis increases as you scroll down the canvas.
 - For most shapes, the x and y define the top left corner of the shape. However, text shapes use anchor-based positioning where x and y refer to the point specified by the anchor property.
+- **When creating new shapes, omit \`x\` and \`y\` entirely.** The system will automatically place new shapes near any relevant context (selected shapes, targeted area, etc.). You can still use \`place\`, \`move\`, \`align\`, \`stack\`, and \`distribute\` to control the layout of existing shapes after they are created.
 
 ${flagged(
 	flags.canEdit,

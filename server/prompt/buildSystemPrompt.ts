@@ -19,7 +19,7 @@ import { buildRulesPromptSection } from './sections/rules-section'
  */
 export function buildSystemPrompt(
 	prompt: AgentPrompt,
-	opts: { withSchema: boolean } = { withSchema: true }
+	opts: { withSchema: boolean } = { withSchema: false }
 ): string {
 	const { withSchema = true } = opts
 

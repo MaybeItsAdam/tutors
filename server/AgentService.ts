@@ -4,13 +4,13 @@ import { createOpenAI, OpenAIProvider } from '@ai-sdk/openai'
 import { LanguageModel, ModelMessage, streamText } from 'ai'
 import { AgentModelName, getAgentModelDefinition, isValidModelName } from '../shared/models'
 import { DebugPart } from '../shared/schema/PromptPartDefinitions'
+import { buildToolDefinitions } from '../shared/schema/buildToolDefinitions'
 import { AgentAction } from '../shared/types/AgentAction'
 import { AgentPrompt } from '../shared/types/AgentPrompt'
 import { Streaming } from '../shared/types/Streaming'
 import { buildMessages } from './prompt/buildMessages'
 import { buildSystemPrompt } from './prompt/buildSystemPrompt'
 import { getModelName } from './prompt/getModelName'
-import { closeAndParseJson } from './closeAndParseJson'
 
 export interface ServerEnvironment {
 	OPENAI_API_KEY: string
@@ -60,7 +60,9 @@ export class AgentService {
 		}
 
 		const modelDefinition = getAgentModelDefinition(modelId)
-		const systemPrompt = buildSystemPrompt(prompt)
+
+		// Build system prompt — schema is omitted because tools provide it
+		const systemPrompt = buildSystemPrompt(prompt, { withSchema: false })
 
 		// Build messages with provider-specific options
 		const messages: ModelMessage[] = []
@@ -89,33 +91,33 @@ export class AgentService {
 		const debugPart = prompt.debug as DebugPart | undefined
 		if (debugPart) {
 			if (debugPart.logSystemPrompt) {
-				const promptWithoutSchema = buildSystemPrompt(prompt, { withSchema: false })
-				console.log('[DEBUG] System Prompt (without schema):\n', promptWithoutSchema)
+				console.log('[DEBUG] System Prompt:\n', systemPrompt)
 			}
 			if (debugPart.logMessages) {
 				console.log('[DEBUG] Messages:\n', JSON.stringify(promptMessages, null, 2))
 			}
 		}
 
-		// Add the assistant message to indicate the start of the actions
-		messages.push({
-			role: 'assistant',
-			content: '{"actions": [{"_type":',
-		})
+		// Build tool definitions from the current mode's action types
+		const actionTypes = (prompt.mode as any)?.actionTypes as AgentAction['_type'][] | undefined
+		const modeType = (prompt.mode as any)?.modeType as string | undefined
+		const tools = actionTypes && modeType ? buildToolDefinitions(actionTypes, modeType) : {}
 
 		// Configure thinking budgets based on model
 		const geminiThinkingBudget = modelDefinition.thinking ? 256 : 0
 		const openaiReasoningEffort = provider === 'openai.responses' ? 'none' : 'minimal'
 
 		try {
-			const { textStream } = streamText({
+			const result = streamText({
 				model,
 				messages,
+				tools,
+				maxSteps: 20,
 				maxOutputTokens: 8192,
 				temperature: 0,
 				providerOptions: {
 					anthropic: {
-						thinking: { type: 'disabled' },
+						thinking: { type: 'enabled', budgetTokens: 8000 },
 					},
 					google: {
 						thinkingConfig: { thinkingBudget: geminiThinkingBudget },
@@ -133,61 +135,17 @@ export class AgentService {
 				},
 			})
 
-			const canForceResponseStart =
-				provider === 'anthropic.messages' || provider === 'google.generative-ai'
-			let buffer = canForceResponseStart ? '{"actions": [{"_type":' : ''
-			let cursor = 0
-			let maybeIncompleteAction: AgentAction | null = null
-
 			let startTime = Date.now()
-			for await (const text of textStream) {
-				buffer += text
 
-				const partialObject = closeAndParseJson(buffer)
-				if (!partialObject) continue
-
-				const actions = partialObject.actions
-				if (!Array.isArray(actions)) continue
-				if (actions.length === 0) continue
-
-				if (actions.length > cursor) {
-					// Emit the previous action as complete (skip when cursor==0, there's no previous)
-					if (cursor > 0) {
-						const prevAction = actions[cursor - 1] as AgentAction
-						if (prevAction) {
-							yield {
-								...prevAction,
-								complete: true,
-								time: Date.now() - startTime,
-							}
-						}
-					}
-					maybeIncompleteAction = null
-					cursor++
-					startTime = Date.now()
-				}
-
-				const action = actions[cursor - 1] as AgentAction | undefined
-				if (action) {
-					if (!maybeIncompleteAction) {
-						startTime = Date.now()
-					}
-
-					maybeIncompleteAction = action
-
+			for await (const chunk of result.fullStream) {
+				if (chunk.type === 'tool-call') {
+					const action = { _type: chunk.toolName, ...chunk.args } as AgentAction
 					yield {
 						...action,
-						complete: false,
+						complete: true,
 						time: Date.now() - startTime,
 					}
-				}
-			}
-
-			if (maybeIncompleteAction) {
-				yield {
-					...maybeIncompleteAction,
-					complete: true,
-					time: Date.now() - startTime,
+					startTime = Date.now()
 				}
 			}
 		} catch (error: any) {

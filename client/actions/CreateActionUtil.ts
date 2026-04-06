@@ -8,6 +8,7 @@ import { CreateAction } from '../../shared/schema/AgentActionSchemas'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
+import { computeAutoPlacement } from './computeAutoPlacement'
 
 export const CreateActionUtil = registerActionUtil(
 	class CreateActionUtil extends AgentActionUtil<CreateAction> {
@@ -68,6 +69,26 @@ export const CreateActionUtil = registerActionUtil(
 
 			// Translate the shape back to the chat's position
 			const shapePartial = helpers.removeOffsetFromShapePartial(shape)
+
+			// Auto-place if the AI omitted coordinates (Claude Code style: AI decides WHAT, client decides WHERE)
+			if ('x' in shapePartial && shapePartial.x === undefined) {
+				const contextItems = helpers.agent.context.getItems()
+				const w = (shapePartial as any).w ?? 100
+				const h = (shapePartial as any).h ?? 100
+				const { x, y } = computeAutoPlacement(editor, contextItems, w, h)
+				;(shapePartial as any).x = x
+				;(shapePartial as any).y = y
+			}
+
+			// Auto-place arrows and lines if start/end points were omitted
+			if ('x1' in shapePartial && shapePartial.x1 === undefined) {
+				const contextItems = helpers.agent.context.getItems()
+				const { x, y } = computeAutoPlacement(editor, contextItems)
+				;(shapePartial as any).x1 = x
+				;(shapePartial as any).y1 = y
+				;(shapePartial as any).x2 = x + 200
+				;(shapePartial as any).y2 = y
+			}
 
 			const result = convertPartialFocusedShapeToTldrawShape(editor, shapePartial, {
 				defaultShape: getDefaultShape(shape._type, action.complete),

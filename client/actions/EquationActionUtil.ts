@@ -5,6 +5,7 @@ import { AgentActionUtil } from './AgentActionUtil'
 import { IEquationShape } from '../shapes/equation/EquationShape'
 
 import { Streaming } from '../../shared/types/Streaming'
+import { computeAutoPlacement } from './computeAutoPlacement'
 
 export class EquationActionUtil extends AgentActionUtil<EquationAction> {
 	static override type = 'equation' as const
@@ -12,24 +13,30 @@ export class EquationActionUtil extends AgentActionUtil<EquationAction> {
 	override sanitizeAction(action: Streaming<EquationAction>): Streaming<EquationAction> | null {
 		return {
 			...action,
-			x: typeof action.x === 'number' ? action.x : 0,
-			y: typeof action.y === 'number' ? action.y : 0,
+			// x/y left undefined if not provided — applyAction handles fallback via auto-placement
+			x: typeof action.x === 'number' ? action.x : undefined,
+			y: typeof action.y === 'number' ? action.y : undefined,
 			latex: action.latex || '',
 		}
 	}
 
 	override applyAction(action: Streaming<EquationAction>, helpers: AgentHelpers) {
 		const shapeId = createShapeId()
-		
-		const x = typeof action.x === 'number' ? action.x : 0
-		const y = typeof action.y === 'number' ? action.y : 0
 
-		// Revert the offset so coordinates map to absolute canvas position
-		const position = helpers.removeOffsetFromVec({ x, y })
-
-		// Default size; the shape uses auto-resize so it will adjust to KaTeX rendering
+		// Default size — the shape auto-resizes to fit KaTeX rendering
 		const width = 300
 		const height = 100
+
+		let position: { x: number; y: number }
+
+		if (typeof action.x === 'number' && typeof action.y === 'number') {
+			// AI provided explicit coordinates — convert from model space to canvas space
+			position = helpers.removeOffsetFromVec({ x: action.x, y: action.y })
+		} else {
+			// Auto-place near context (Claude Code style: AI decides WHAT, client decides WHERE)
+			const contextItems = helpers.agent.context.getItems()
+			position = computeAutoPlacement(this.editor, contextItems, width, height)
+		}
 
 		this.editor.createShape<IEquationShape>({
 			id: shapeId,

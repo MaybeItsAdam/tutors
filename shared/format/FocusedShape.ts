@@ -31,8 +31,8 @@ export const FocusedGeoShape = z.object({
 	text: FocusedLabel.optional(),
 	textAlign: z.enum(['start', 'middle', 'end']).optional(),
 	w: z.number(),
-	x: z.number(),
-	y: z.number(),
+	x: z.number().optional(),
+	y: z.number().optional(),
 })
 
 export type FocusedGeoShape = z.infer<typeof FocusedGeoShape>
@@ -45,10 +45,10 @@ const FocusedLineShape = z.object({
 	color: FocusedColor,
 	note: z.string(),
 	shapeId: SimpleShapeIdSchema,
-	x1: z.number(),
-	x2: z.number(),
-	y1: z.number(),
-	y2: z.number(),
+	x1: z.number().optional(),
+	x2: z.number().optional(),
+	y1: z.number().optional(),
+	y2: z.number().optional(),
 })
 
 export type FocusedLineShape = z.infer<typeof FocusedLineShape>
@@ -59,8 +59,8 @@ const FocusedNoteShape = z.object({
 	note: z.string(),
 	shapeId: SimpleShapeIdSchema,
 	text: FocusedLabel.optional(),
-	x: z.number(),
-	y: z.number(),
+	x: z.number().optional(),
+	y: z.number().optional(),
 })
 
 export type FocusedNoteShape = z.infer<typeof FocusedNoteShape>
@@ -75,8 +75,8 @@ const FocusedTextShape = z
 		note: z.string(),
 		shapeId: SimpleShapeIdSchema,
 		text: FocusedLabel,
-		x: z.number(),
-		y: z.number(),
+		x: z.number().optional(),
+		y: z.number().optional(),
 	})
 	.meta({
 		title: 'Text Shape',
@@ -97,10 +97,10 @@ const FocusedArrowShape = z.object({
 	shapeId: SimpleShapeIdSchema,
 	text: z.string().optional(),
 	toId: SimpleShapeIdSchema.nullable(),
-	x1: z.number(),
-	x2: z.number(),
-	y1: z.number(),
-	y2: z.number(),
+	x1: z.number().optional(),
+	x2: z.number().optional(),
+	y1: z.number().optional(),
+	y2: z.number().optional(),
 	bend: z.number().optional(),
 })
 
@@ -128,8 +128,8 @@ const FocusedUnknownShape = z
 		note: z.string(),
 		shapeId: SimpleShapeIdSchema,
 		subType: z.string(),
-		x: z.number(),
-		y: z.number(),
+		x: z.number().optional(),
+		y: z.number().optional(),
 	})
 	.meta({
 		title: 'Unknown Shape',
