@@ -10,15 +10,15 @@ import {
 	TldrawUiToastsProvider,
 	TLUiOverrides,
 	Editor,
-	ErrorBoundary,
 } from 'tldraw'
 import { TldrawAgentApp } from './agent/TldrawAgentApp'
 import {
 	TldrawAgentAppContextProvider,
 	TldrawAgentAppProvider,
 } from './agent/TldrawAgentAppProvider'
-import { ChatPanel } from './components/ChatPanel'
-import { ChatPanelFallback } from './components/ChatPanelFallback'
+import { DraggableChatPanel } from './components/panels/DraggableChatPanel'
+import { LayoutAwareStylePanel } from './components/panels/DraggableStylePanel'
+import { PanelLayoutProvider } from './components/panels/PanelLayoutContext'
 import { CustomHelperButtons } from './components/CustomHelperButtons'
 import { MathCheatSheet } from './components/MathCheatSheet'
 import { PlotGraphButton } from './components/PlotGraphButton'
@@ -293,6 +293,7 @@ function App() {
 	// tldraw components — StylePanel is null because we render our own draggable version in Overlays
 	const components: TLComponents = useMemo(() => {
 		return {
+			StylePanel: null,
 			Toolbar: () => <CustomToolbar pinnedToolIds={pinnedToolIds} />,
 			HelperButtons: () =>
 				app && (
@@ -304,6 +305,7 @@ function App() {
 				<>
 					<TldrawOverlays />
 					<PlotGraphButton />
+					<LayoutAwareStylePanel />
 					{app && (
 						<TldrawAgentAppContextProvider app={app}>
 							<AgentViewportBoundsHighlights />
@@ -316,6 +318,7 @@ function App() {
 	}, [app, pinnedToolIds])
 
 	return (
+		<PanelLayoutProvider>
 		<TldrawUiToastsProvider>
 			<input
 				id="pdf-upload-input"
@@ -395,13 +398,7 @@ function App() {
 						</button>
 					)}
 				</div>
-				{app && uiView === 'editor' && (
-					<ErrorBoundary fallback={ChatPanelFallback}>
-						<TldrawAgentAppContextProvider app={app}>
-							<ChatPanel />
-						</TldrawAgentAppContextProvider>
-					</ErrorBoundary>
-				)}
+				{app && uiView === 'editor' && <DraggableChatPanel app={app} />}
 				{app && uiView === 'landing' && (
 					<TldrawAgentAppContextProvider app={app}>
 						<WorkspaceLandingPage
@@ -442,6 +439,7 @@ function App() {
 			</div>
 			{showCheatSheet && <MathCheatSheet onClose={() => setShowCheatSheet(false)} />}
 		</TldrawUiToastsProvider>
+		</PanelLayoutProvider>
 	)
 }
 

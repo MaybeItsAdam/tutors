@@ -70,7 +70,7 @@ export function PanelLayoutProvider({ children }: { children: ReactNode }) {
 		el.style.position = 'fixed'
 		el.style.inset = '0'
 		el.style.pointerEvents = 'none'
-		el.style.zIndex = '500'
+		el.style.zIndex = '350'
 		el.id = 'panel-portal-target'
 		document.body.appendChild(el)
 		return el
@@ -99,9 +99,106 @@ export function usePortalTarget() {
 	return useContext(PortalTargetCtx)
 }
 
-// ── Hook: useBottomPanel ───────────────────────────────────────────────────────
+// ── Hook: useFreeDrag ─────────────────────────────────────────────────────────
+// Free 2D drag that snaps to the nearest screen edge on release.
 
 const EDGE_GAP = 16
+
+function snapToNearestEdge(
+	x: number,
+	y: number,
+	w: number,
+	h: number
+): { x: number; y: number } {
+	const vw = window.innerWidth
+	const vh = window.innerHeight
+
+	// Clamp inside viewport
+	x = Math.max(EDGE_GAP, Math.min(vw - w - EDGE_GAP, x))
+	y = Math.max(EDGE_GAP, Math.min(vh - h - EDGE_GAP, y))
+
+	// Distance from each edge
+	const dLeft = x - EDGE_GAP
+	const dRight = vw - w - EDGE_GAP - x
+	const dTop = y - EDGE_GAP
+	const dBottom = vh - h - EDGE_GAP - y
+
+	const min = Math.min(dLeft, dRight, dTop, dBottom)
+	if (min === dLeft) x = EDGE_GAP
+	else if (min === dRight) x = vw - w - EDGE_GAP
+	else if (min === dTop) y = EDGE_GAP
+	else y = vh - h - EDGE_GAP
+
+	return { x, y }
+}
+
+export function useFreeDrag({
+	width,
+	height,
+	storageKey,
+	defaultPos,
+}: {
+	width: number
+	height: number
+	storageKey?: string
+	defaultPos?: { x: number; y: number }
+}) {
+	const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+		if (storageKey) {
+			try {
+				const raw = localStorage.getItem(storageKey)
+				if (raw) return JSON.parse(raw)
+			} catch {}
+		}
+		return (
+			defaultPos ?? {
+				x: window.innerWidth - width - EDGE_GAP,
+				y: window.innerHeight - height - EDGE_GAP,
+			}
+		)
+	})
+
+	const posRef = useRef(pos)
+	posRef.current = pos
+
+	const onDragStart = useCallback(
+		(e: React.PointerEvent) => {
+			e.preventDefault()
+			;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+			const ox = e.clientX - posRef.current.x
+			const oy = e.clientY - posRef.current.y
+
+			const onMove = (ev: PointerEvent) => {
+				setPos({ x: ev.clientX - ox, y: ev.clientY - oy })
+			}
+			const onUp = (ev: PointerEvent) => {
+				const snapped = snapToNearestEdge(ev.clientX - ox, ev.clientY - oy, width, height)
+				setPos(snapped)
+				if (storageKey) localStorage.setItem(storageKey, JSON.stringify(snapped))
+				window.removeEventListener('pointermove', onMove)
+				window.removeEventListener('pointerup', onUp)
+			}
+
+			window.addEventListener('pointermove', onMove)
+			window.addEventListener('pointerup', onUp)
+		},
+		[width, height, storageKey]
+	)
+
+	const style: React.CSSProperties = {
+		position: 'fixed',
+		left: pos.x,
+		top: pos.y,
+		width,
+		zIndex: 350,
+		pointerEvents: 'all',
+	}
+
+	return { pos, setPos, style, onDragStart }
+}
+
+// ── Hook: useBottomPanel ───────────────────────────────────────────────────────
+
 const PANEL_GAP = 8
 const BOTTOM = 16
 
@@ -202,7 +299,7 @@ export function useBottomPanel({ id, width, defaultSide }: BottomPanelOptions) {
 		bottom: BOTTOM,
 		left: displayLeft,
 		width,
-		zIndex: isDragging ? 501 : 500,
+		zIndex: isDragging ? 351 : 350,
 		transition: isDragging ? 'none' : 'left 0.25s ease',
 		pointerEvents: 'all',
 	}
