@@ -1,4 +1,4 @@
-import { FormEventHandler, useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ErrorBoundary, useValue } from 'tldraw'
 import { TldrawAgentApp } from '../../agent/TldrawAgentApp'
@@ -12,7 +12,6 @@ import {
 	AgentModelProvider,
 	AGENT_MODEL_DEFINITIONS,
 } from '../../../shared/models'
-import { ChatPanelFallback } from '../ChatPanelFallback'
 import { ChatHistory } from '../chat-history/ChatHistory'
 import { TodoList } from '../TodoList'
 import { BYOKSettings } from '../byok/BYOKSettings'
@@ -23,21 +22,62 @@ const BAR_HEIGHT = 48
 const EDGE_GAP = 16
 const DEFAULT_TRANSCRIPT_H = 320
 const MIN_TRANSCRIPT_H = 80
+const NO_DRAG_SELECTOR =
+	'button,input,textarea,select,option,label,a,[contenteditable="true"]'
 
-function snapBarToEdge(x: number, y: number) {
+function shouldStartPanelDrag(target: EventTarget | null) {
+	return target instanceof Element && !target.closest(NO_DRAG_SELECTOR)
+}
+
+function clampBarToViewport(
+	x: number,
+	y: number,
+	{
+		transcriptOpen,
+		transcriptHeight,
+	}: { transcriptOpen: boolean; transcriptHeight: number }
+) {
 	const vw = window.innerWidth
 	const vh = window.innerHeight
-	x = Math.max(EDGE_GAP, Math.min(vw - CHAT_WIDTH - EDGE_GAP, x))
-	y = Math.max(EDGE_GAP, Math.min(vh - BAR_HEIGHT - EDGE_GAP, y))
+	const topOffset = transcriptOpen ? transcriptHeight : 0
+	const minX = EDGE_GAP
+	const maxX = Math.max(EDGE_GAP, vw - CHAT_WIDTH - EDGE_GAP)
+	const minY = EDGE_GAP + topOffset
+	const maxY = Math.max(minY, vh - BAR_HEIGHT - EDGE_GAP)
+	return {
+		x: Math.max(minX, Math.min(maxX, x)),
+		y: Math.max(minY, Math.min(maxY, y)),
+	}
+}
+
+function snapBarToEdge(
+	x: number,
+	y: number,
+	{
+		transcriptOpen,
+		transcriptHeight,
+	}: { transcriptOpen: boolean; transcriptHeight: number }
+) {
+	const vw = window.innerWidth
+	const vh = window.innerHeight
+	const topOffset = transcriptOpen ? transcriptHeight : 0
+	const panelHeight = topOffset + BAR_HEIGHT
+
+	const clamped = clampBarToViewport(x, y, { transcriptOpen, transcriptHeight })
+	x = clamped.x
+	y = clamped.y
+	const clampedPanelTop = y - topOffset
+	const rightX = Math.max(EDGE_GAP, vw - CHAT_WIDTH - EDGE_GAP)
+	const bottomY = Math.max(EDGE_GAP + topOffset, vh - BAR_HEIGHT - EDGE_GAP)
 	const dL = x - EDGE_GAP
-	const dR = vw - CHAT_WIDTH - EDGE_GAP - x
-	const dT = y - EDGE_GAP
-	const dB = vh - BAR_HEIGHT - EDGE_GAP - y
+	const dR = rightX - x
+	const dT = clampedPanelTop - EDGE_GAP
+	const dB = vh - panelHeight - EDGE_GAP - clampedPanelTop
 	const m = Math.min(dL, dR, dT, dB)
 	if (m === dL) x = EDGE_GAP
-	else if (m === dR) x = vw - CHAT_WIDTH - EDGE_GAP
-	else if (m === dT) y = EDGE_GAP
-	else y = vh - BAR_HEIGHT - EDGE_GAP
+	else if (m === dR) x = rightX
+	else if (m === dT) y = EDGE_GAP + topOffset
+	else y = bottomY
 	return { x, y }
 }
 
@@ -140,11 +180,9 @@ function TranscriptPanel({
 function ChatBar({
 	transcriptOpen,
 	onToggleTranscript,
-	onDragStart,
 }: {
 	transcriptOpen: boolean
 	onToggleTranscript: () => void
-	onDragStart: (e: React.PointerEvent) => void
 }) {
 	const agent = useAgent()
 	const { editor } = agent
@@ -178,7 +216,7 @@ function ChatBar({
 	)
 
 	return (
-		<form className="minimized-bar" onSubmit={handleSubmit} onPointerDown={onDragStart}>
+		<form className="minimized-bar" onSubmit={handleSubmit}>
 			{/* Provider logo */}
 			<button
 				type="button"
@@ -268,7 +306,8 @@ export function DraggableChatPanel({ app }: { app: TldrawAgentApp }) {
 
 	// ── Bar drag ──────────────────────────────────────────────────────────────
 	const onDragStart = useCallback((e: React.PointerEvent) => {
-		// Only drag from the bar background itself (children stop propagation)
+		if (!shouldStartPanelDrag(e.target)) return
+		e.preventDefault()
 		const startCX = e.clientX
 		const startCY = e.clientY
 		const startX = barPosRef.current.x
@@ -283,7 +322,8 @@ export function DraggableChatPanel({ app }: { app: TldrawAgentApp }) {
 		const onUp = (ev: PointerEvent) => {
 			const snapped = snapBarToEdge(
 				startX + (ev.clientX - startCX),
-				startY + (ev.clientY - startCY)
+				startY + (ev.clientY - startCY),
+				{ transcriptOpen, transcriptHeight }
 			)
 			setBarPos(snapped)
 			window.removeEventListener('pointermove', onMove)
@@ -291,7 +331,7 @@ export function DraggableChatPanel({ app }: { app: TldrawAgentApp }) {
 		}
 		window.addEventListener('pointermove', onMove)
 		window.addEventListener('pointerup', onUp)
-	}, [setBarPos])
+	}, [setBarPos, transcriptOpen, transcriptHeight])
 
 	// ── Transcript resize (drag the top handle) ───────────────────────────────
 	const transcriptHeightRef = useRef(transcriptHeight)
@@ -316,6 +356,30 @@ export function DraggableChatPanel({ app }: { app: TldrawAgentApp }) {
 		window.addEventListener('pointerup', onUp)
 	}, [])
 
+	useEffect(() => {
+		const clamped = clampBarToViewport(barPosRef.current.x, barPosRef.current.y, {
+			transcriptOpen,
+			transcriptHeight,
+		})
+		if (clamped.x !== barPosRef.current.x || clamped.y !== barPosRef.current.y) {
+			setBarPos(clamped)
+		}
+	}, [setBarPos, transcriptOpen, transcriptHeight])
+
+	useEffect(() => {
+		const handleWindowResize = () => {
+			const clamped = clampBarToViewport(barPosRef.current.x, barPosRef.current.y, {
+				transcriptOpen,
+				transcriptHeight,
+			})
+			if (clamped.x !== barPosRef.current.x || clamped.y !== barPosRef.current.y) {
+				setBarPos(clamped)
+			}
+		}
+		window.addEventListener('resize', handleWindowResize)
+		return () => window.removeEventListener('resize', handleWindowResize)
+	}, [setBarPos, transcriptOpen, transcriptHeight])
+
 	if (!portalTarget) return null
 
 	// Transcript grows upward from the bar
@@ -331,7 +395,12 @@ export function DraggableChatPanel({ app }: { app: TldrawAgentApp }) {
 	}
 
 	return createPortal(
-		<div className="tl-theme__light chat-compact-shell" data-panel-id="chat" style={panelStyle}>
+		<div
+			className="tl-theme__light chat-compact-shell"
+			data-panel-id="chat"
+			style={panelStyle}
+			onPointerDown={onDragStart}
+		>
 			<TldrawAgentAppContextProvider app={app}>
 				{transcriptOpen && (
 					<TranscriptPanel height={transcriptHeight} onResizeStart={onResizeStart} />
@@ -339,7 +408,6 @@ export function DraggableChatPanel({ app }: { app: TldrawAgentApp }) {
 				<ChatBar
 					transcriptOpen={transcriptOpen}
 					onToggleTranscript={() => setTranscriptOpen((p) => !p)}
-					onDragStart={onDragStart}
 				/>
 			</TldrawAgentAppContextProvider>
 		</div>,

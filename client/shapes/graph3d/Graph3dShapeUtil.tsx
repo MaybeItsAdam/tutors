@@ -6,6 +6,8 @@ import { BaseBoxShapeUtil, HTMLContainer, useEditor, useValue } from 'tldraw'
 import { graph3dShapeProps, IGraph3dShape } from './Graph3dShape'
 import { IEquationShape } from '../equation/EquationShape'
 import { matrixFromLatex, apply3, det3, trace3 } from '../../utils/matrixFromLatex'
+import { latexToMathjsLines } from '../../utils/latexToMathjs'
+import { dispatchGraph3dOrientation, GRAPH3D_CONTROL_EVENT, Graph3dControlEventDetail } from './Graph3dControlEvents'
 
 // ── Height-to-colour (cool→warm rainbow) ─────────────────────────────────────
 function heightColor(t: number): [number, number, number] {
@@ -82,6 +84,14 @@ function buildGeometry(
 	return geo
 }
 
+function normalizeSurfaceExpression(expr: string) {
+	const trimmed = expr.trim()
+	if (!trimmed) return ''
+	const equalsIndex = trimmed.indexOf('=')
+	if (equalsIndex === -1) return trimmed
+	return trimmed.slice(equalsIndex + 1).trim()
+}
+
 // ── Three.js renderer component ───────────────────────────────────────────────
 function Graph3dRenderer({
 	shape,
@@ -103,6 +113,10 @@ function Graph3dRenderer({
 
 	const [editExpr, setEditExpr] = useState(expression)
 
+	const isSelected = useValue('graph3d-selected', () => {
+		return editor.getSelectedShapeIds().includes(shape.id)
+	}, [editor, shape.id])
+
 	// ── Detect bound 3×3 matrix from an arrow-linked equation shape ──
 	const boundMatrix = useValue('bound-matrix-3x3', () => {
 		const incomingBindings = editor.getBindingsToShape(shape.id, 'arrow')
@@ -119,6 +133,30 @@ function Graph3dRenderer({
 		}
 		return null
 	}, [editor, shape.id])
+	const boundExpression = useValue('bound-equation-3d-expression', () => {
+		const incomingBindings = editor.getBindingsToShape(shape.id, 'arrow')
+		for (const binding of incomingBindings) {
+			if (binding.props.terminal !== 'end') continue
+			const startBindings = editor.getBindingsFromShape(binding.fromId, 'arrow')
+			for (const startB of startBindings) {
+				if (startB.props.terminal !== 'start') continue
+				const srcShape = editor.getShape(startB.toId)
+				if (!srcShape || srcShape.type !== 'equation') continue
+				const latex = (srcShape as IEquationShape).props.latex?.trim()
+				if (!latex) continue
+				const maybeMatrix = matrixFromLatex(latex)
+				if (maybeMatrix && maybeMatrix.length === 3 && maybeMatrix[0].length === 3) continue
+				const lines = latexToMathjsLines(latex)
+				for (const line of lines) {
+					const normalized = normalizeSurfaceExpression(line)
+					if (normalized) return normalized
+				}
+			}
+		}
+		return null
+	}, [editor, shape.id])
+	const activeExpression = boundExpression ?? expression
+	const canOrbit = isEditing || isSelected
 
 	// ── Setup scene on mount ──
 	useEffect(() => {
@@ -144,11 +182,17 @@ function Graph3dRenderer({
 		camera.lookAt(0, 0, 0)
 		cameraRef.current = camera
 
-		// Orbit controls (disabled pointer propagation so tldraw doesn't grab events)
+		// Orbit controls (enabled when selected/editing)
 		const controls = new OrbitControls(camera, canvas)
 		controls.enableDamping = true
 		controls.dampingFactor = 0.08
-		controls.enabled = false // enabled only when isEditing
+		controls.enablePan = false
+		controls.mouseButtons = {
+			LEFT: THREE.MOUSE.NONE,
+			MIDDLE: THREE.MOUSE.DOLLY,
+			RIGHT: THREE.MOUSE.ROTATE,
+		}
+		controls.enabled = false
 		controlsRef.current = controls
 
 		// Axes helper
@@ -175,6 +219,17 @@ function Graph3dRenderer({
 		const animate = () => {
 			rafRef.current = requestAnimationFrame(animate)
 			controls.update()
+			const xAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion)
+			const yAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion)
+			const zAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(camera.quaternion)
+			dispatchGraph3dOrientation({
+				shapeId: shape.id,
+				axes: {
+					x: { x: xAxis.x, y: xAxis.y, z: xAxis.z },
+					y: { x: yAxis.x, y: yAxis.y, z: yAxis.z },
+					z: { x: zAxis.x, y: zAxis.y, z: zAxis.z },
+				},
+			})
 			renderer.render(scene, camera)
 		}
 		animate()
@@ -190,8 +245,8 @@ function Graph3dRenderer({
 
 	// ── Update surface mesh when expression or bounds change ──
 	const geo = useMemo(
-		() => buildGeometry(expression, xMin, xMax, yMin, yMax, resolution),
-		[expression, xMin, xMax, yMin, yMax, resolution]
+		() => buildGeometry(activeExpression, xMin, xMax, yMin, yMax, resolution),
+		[activeExpression, xMin, xMax, yMin, yMax, resolution]
 	)
 
 	useEffect(() => {
@@ -275,9 +330,71 @@ function Graph3dRenderer({
 	// ── Toggle orbit controls with edit mode ──
 	useEffect(() => {
 		if (controlsRef.current) {
-			controlsRef.current.enabled = isEditing
+			controlsRef.current.enabled = canOrbit
 		}
-	}, [isEditing])
+	}, [canOrbit])
+
+	useEffect(() => {
+		const handleControlEvent = (event: Event) => {
+			const detail = (event as CustomEvent<Graph3dControlEventDetail>).detail
+			if (!detail || detail.shapeId !== shape.id) return
+			const camera = cameraRef.current
+			const controls = controlsRef.current
+			if (!camera || !controls) return
+
+			const size = Math.max(xMax - xMin, yMax - yMin)
+			const target = new THREE.Vector3(0, 0, 0)
+			const setView = (x: number, y: number, z: number) => {
+				camera.position.set(x, y, z)
+				controls.target.copy(target)
+				controls.update()
+			}
+
+			switch (detail.action) {
+				case 'reset':
+					setView(size * 0.8, size * 0.9, size * 0.8)
+					break
+				case 'top':
+					setView(0, size * 1.45, 0.001)
+					break
+				case 'front':
+					setView(0, size * 0.55, size * 1.35)
+					break
+				case 'right':
+					setView(size * 1.35, size * 0.55, 0)
+					break
+				case 'left':
+					setView(-size * 1.35, size * 0.55, 0)
+					break
+				case 'zoom-in':
+				case 'zoom-out': {
+					const factor = detail.action === 'zoom-in' ? 0.82 : 1.22
+					const offset = camera.position.clone().sub(controls.target).multiplyScalar(factor)
+					camera.position.copy(controls.target.clone().add(offset))
+					controls.update()
+					break
+				}
+				case 'orbit-delta': {
+					const dx = detail.dx ?? 0
+					const dy = detail.dy ?? 0
+					if (dx === 0 && dy === 0) break
+					const offset = camera.position.clone().sub(controls.target)
+					const spherical = new THREE.Spherical().setFromVector3(offset)
+					spherical.theta -= dx * 0.09
+					spherical.phi = Math.max(0.12, Math.min(Math.PI - 0.12, spherical.phi + dy * 0.09))
+					offset.setFromSpherical(spherical)
+					camera.position.copy(controls.target.clone().add(offset))
+					controls.update()
+					break
+				}
+			}
+		}
+
+		window.addEventListener(GRAPH3D_CONTROL_EVENT, handleControlEvent as EventListener)
+		return () => {
+			window.removeEventListener(GRAPH3D_CONTROL_EVENT, handleControlEvent as EventListener)
+		}
+	}, [shape.id, xMax, xMin, yMax, yMin])
 
 	// ── Resize renderer when shape dimensions change ──
 	useEffect(() => {
@@ -292,10 +409,21 @@ function Graph3dRenderer({
 	const handleExprKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
 		e.stopPropagation()
 		if (e.key === 'Enter') {
-			// update shape expression
+			const nextExpression = normalizeSurfaceExpression(editExpr) || expression
+			if (nextExpression !== expression) {
+				editor.updateShape({
+					id: shape.id,
+					type: 'graph3d',
+					props: { expression: nextExpression },
+				})
+			}
 			;(e.target as HTMLInputElement).blur()
 		}
 	}
+
+	useEffect(() => {
+		setEditExpr(expression)
+	}, [expression])
 
 	return (
 		<div style={{ position: 'relative', width: w, height: h, userSelect: 'none' }}>
@@ -304,6 +432,14 @@ function Graph3dRenderer({
 				width={w}
 				height={h}
 				style={{ display: 'block', borderRadius: 6 }}
+				onContextMenu={(e) => e.preventDefault()}
+				onPointerDown={(e) => {
+					if (e.button !== 0) e.stopPropagation()
+				}}
+				onPointerMove={(e) => {
+					if ((e.buttons & 2) !== 0 || (e.buttons & 4) !== 0) e.stopPropagation()
+				}}
+				onWheel={(e) => e.stopPropagation()}
 			/>
 
 			{/* Expression label / editor */}
@@ -320,16 +456,26 @@ function Graph3dRenderer({
 					display: 'flex',
 					alignItems: 'center',
 					gap: 6,
-					pointerEvents: isEditing ? 'all' : 'none',
+					pointerEvents: isEditing && !boundExpression && !boundMatrix ? 'all' : 'none',
 				}}
 				onPointerDown={e => e.stopPropagation()}
 			>
 				<span style={{ color: '#94a3b8', fontSize: 12, fontFamily: 'monospace' }}>z =</span>
-				{isEditing ? (
+				{isEditing && !boundExpression && !boundMatrix ? (
 					<input
 						value={editExpr}
 						onChange={e => setEditExpr(e.target.value)}
 						onKeyDown={handleExprKeyDown}
+						onBlur={() => {
+							const nextExpression = normalizeSurfaceExpression(editExpr) || expression
+							if (nextExpression !== expression) {
+								editor.updateShape({
+									id: shape.id,
+									type: 'graph3d',
+									props: { expression: nextExpression },
+								})
+							}
+						}}
 						style={{
 							background: 'transparent',
 							border: 'none',
@@ -342,7 +488,7 @@ function Graph3dRenderer({
 					/>
 				) : (
 					<span style={{ color: '#e2e8f0', fontSize: 13, fontFamily: 'monospace' }}>
-						{expression}
+						{activeExpression}
 					</span>
 				)}
 			</div>
@@ -391,7 +537,11 @@ function Graph3dRenderer({
 						pointerEvents: 'none',
 					}}
 				>
-					{boundMatrix ? '3×3 matrix transform' : 'drag to rotate · scroll to zoom'}
+					{boundMatrix
+						? '3×3 matrix transform'
+						: boundExpression
+							? 'Driven by linked equation — edit the MathLive shape to update'
+							: 'right-drag to rotate · wheel to zoom'}
 				</div>
 			)}
 		</div>
@@ -423,7 +573,7 @@ export class Graph3dShapeUtil extends BaseBoxShapeUtil<IGraph3dShape> {
 		return (
 			<HTMLContainer
 				id={shape.id}
-				style={{ width: '100%', height: '100%', pointerEvents: isEditing ? 'all' : 'none' }}
+				style={{ width: '100%', height: '100%', pointerEvents: 'all', userSelect: 'none' }}
 			>
 				<Graph3dRenderer shape={shape} isEditing={isEditing} />
 			</HTMLContainer>
