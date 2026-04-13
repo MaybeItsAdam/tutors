@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-export type AIProvider = 'openai' | 'anthropic' | 'gemini'
+export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'google'
 
 export interface BYOKConfig {
 	provider: AIProvider

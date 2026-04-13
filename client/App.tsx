@@ -331,8 +331,10 @@ function App() {
 						persistenceKey="tldraw-agent-demo"
 						onMount={(editor) => {
 							editorRef.current = editor
-							// @ts-expect-error - Attach editor to window for debugging and testing
-							window.editor = editor
+							if (import.meta.env.DEV) {
+								// @ts-expect-error - Attach editor to window for debugging
+								window.editor = editor
+							}
 
 							const handleDrop = async (e: DragEvent) => {
 								if (!e.dataTransfer?.files.length) return

@@ -7,6 +7,7 @@ const STORAGE_KEY = 'tldraw-agent-app:workspaces:v1'
 const AUTO_SNAPSHOT_CHECK_INTERVAL_MS = 30_000
 const WORKING_STATE_SAVE_INTERVAL_MS = 5_000
 const MS_PER_MINUTE = 60_000
+const MAX_AUTO_SNAPSHOTS_PER_BRANCH = 20
 
 export interface WorkspaceState {
 	editorSnapshot: TLEditorSnapshot
@@ -212,12 +213,21 @@ export class WorkspaceManager extends BaseAgentAppManager {
 			if (!current) return prev
 			const currentBranch = current.branches[current.currentBranchId]
 			if (!currentBranch) return prev
+			let nextSnapshots = [...currentBranch.snapshots, snapshot]
+			if (snapshot.isAuto) {
+				// Prune oldest auto-snapshots beyond the cap; never remove manual snapshots
+				const autoSnapshots = nextSnapshots.filter((s) => s.isAuto)
+				if (autoSnapshots.length > MAX_AUTO_SNAPSHOTS_PER_BRANCH) {
+					const keepIds = new Set(autoSnapshots.slice(-MAX_AUTO_SNAPSHOTS_PER_BRANCH).map((s) => s.id))
+					nextSnapshots = nextSnapshots.filter((s) => !s.isAuto || keepIds.has(s.id))
+				}
+			}
 			const nextBranch: WorkspaceBranch = {
 				...currentBranch,
 				updatedAt: now,
 				headSnapshotId: snapshot.id,
 				workingState: structuredClone(state),
-				snapshots: [...currentBranch.snapshots, snapshot],
+				snapshots: nextSnapshots,
 			}
 			return {
 				...prev,

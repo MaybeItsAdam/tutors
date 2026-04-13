@@ -696,7 +696,8 @@ export class TldrawAgent {
 			content: systemPrompt
 		})
 
-		const res = await fetch('http://localhost:8000/api/chat', {
+		const apiBase = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
+		const res = await fetch(`${apiBase}/api/chat`, {
 			method: 'POST',
 			body: JSON.stringify({
 				messages,
@@ -705,8 +706,13 @@ export class TldrawAgent {
 				'Content-Type': 'application/json',
 				...BYOKStore.getHeaders(),
 			},
-			signal,
+			signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
 		})
+
+		if (!res.ok) {
+			const text = await res.text().catch(() => `HTTP ${res.status}`)
+			throw new Error(`Request failed (${res.status}): ${text}`)
+		}
 
 		if (!res.body) {
 			throw Error('No body in response')

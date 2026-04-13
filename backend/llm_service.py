@@ -1,6 +1,7 @@
 import json
 import time
 import asyncio
+import traceback
 from typing import AsyncGenerator
 import litellm
 from utils import close_and_parse_json
@@ -83,5 +84,5 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
         return
 
     except Exception as e:
-        print(f"Error in stream_agent_actions: {e}")
+        traceback.print_exc()
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
