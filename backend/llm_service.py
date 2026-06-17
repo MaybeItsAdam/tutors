@@ -19,7 +19,19 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
     consuming tokens from the upstream LLM provider when the user cancels.
     """
 
-    buffer = '{"actions": [{"_type":'
+    # Parse provider to determine if we should use assistant message prefill
+    provider = model.split('/')[0].lower() if '/' in model else ""
+    use_prefill = provider in ("anthropic", "gemini")
+
+    if use_prefill:
+        prefill_content = '{"actions": [{"_type":'
+        local_messages = list(messages)
+        local_messages.append({"role": "assistant", "content": prefill_content})
+        buffer = prefill_content
+    else:
+        local_messages = messages
+        buffer = ""
+
     cursor = 0
     maybe_incomplete_action = None
     start_time = int(time.time() * 1000)
@@ -28,7 +40,7 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
     try:
         response = await litellm.acompletion(
             model=model,
-            messages=messages,
+            messages=local_messages,
             api_key=api_key,
             stream=True,
             temperature=0,

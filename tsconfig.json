@@ -30,6 +30,6 @@
 		"noImplicitOverride": true
 	},
 	"exclude": ["node_modules", "backend"],
-	"include": ["client", "shared", "server"],
+	"include": ["client", "shared"],
 	"files": ["./vite.config.ts"]
 }

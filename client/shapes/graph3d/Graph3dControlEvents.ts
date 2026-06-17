@@ -25,6 +25,7 @@ export interface Graph3dOrientationEventDetail {
 		y: { x: number; y: number; z: number }
 		z: { x: number; y: number; z: number }
 	}
+	quaternion: { x: number; y: number; z: number; w: number }
 }
 
 export function dispatchGraph3dControl(detail: Graph3dControlEventDetail) {

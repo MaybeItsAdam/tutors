@@ -1,6 +1,6 @@
 import { Editor, RecordsDiff, reverseRecordsDiff, structuredClone, TLRecord } from 'tldraw'
 import { convertTldrawShapeToFocusedShape } from '../../shared/format/convertTldrawShapeToFocusedShape'
-import { AgentModelName } from '../../shared/models'
+import { AgentModelName, AGENT_MODEL_DEFINITIONS } from '../../shared/models'
 import { AgentAction } from '../../shared/types/AgentAction'
 import { AgentInput } from '../../shared/types/AgentInput'
 import { AgentPrompt, BaseAgentPrompt } from '../../shared/types/AgentPrompt'
@@ -696,6 +696,10 @@ export class TldrawAgent {
 			content: systemPrompt
 		})
 
+		const modelName = this.modelName.getModelName()
+		const modelDef = AGENT_MODEL_DEFINITIONS[modelName]
+		const byokConfig = BYOKStore.getConfig()
+
 		const apiBase = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
 		const res = await fetch(`${apiBase}/api/chat`, {
 			method: 'POST',
@@ -704,7 +708,11 @@ export class TldrawAgent {
 			}),
 			headers: {
 				'Content-Type': 'application/json',
-				...BYOKStore.getHeaders(),
+				...(byokConfig.apiKey ? {
+					'X-API-Key': byokConfig.apiKey,
+					'X-Provider': byokConfig.provider,
+					'X-Model': modelDef.id,
+				} : {}),
 			},
 			signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
 		})

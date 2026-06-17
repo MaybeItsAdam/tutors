@@ -690,6 +690,7 @@ body {
 	padding: 8px;
 	display: flex;
 	flex-direction: column;
+	align-items: center;
 	gap: 8px;
 }
 
@@ -717,107 +718,6 @@ body {
 	background: #f9fafb;
 }
 
-.graph3d-gimbal {
-	width: 132px;
-	height: 132px;
-	margin: 0 auto;
-	position: relative;
-	border-radius: 999px;
-	border: 1px solid #d1d5db;
-	background: radial-gradient(circle at center, #ffffff 20%, #f8fafc 100%);
-}
-
-.graph3d-gizmo {
-	cursor: grab;
-	touch-action: none;
-	user-select: none;
-}
-
-.graph3d-gizmo__axis {
-	position: absolute;
-	left: 50%;
-	top: 50%;
-	height: 2px;
-	transform-origin: 0 50%;
-}
-
-.graph3d-gizmo__axis--x {
-	background: #ef4444;
-}
-
-.graph3d-gizmo__axis--y {
-	background: #84cc16;
-}
-
-.graph3d-gizmo__axis--z {
-	background: #3b82f6;
-}
-
-.graph3d-gizmo__node {
-	position: absolute;
-	left: 50%;
-	top: 50%;
-	width: 20px;
-	height: 20px;
-	border-radius: 999px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 11px;
-	font-weight: 700;
-	border: none;
-	color: #111827;
-	box-shadow: 0 2px 10px rgba(15, 23, 42, 0.2);
-	cursor: pointer;
-}
-
-.graph3d-gizmo__node--x {
-	background: #f87171;
-}
-
-.graph3d-gizmo__node--y {
-	background: #a3e635;
-}
-
-.graph3d-gizmo__node--z {
-	background: #60a5fa;
-}
-
-.graph3d-gizmo__node--x-neg {
-	width: 10px;
-	height: 10px;
-	background: #b91c1c;
-	box-shadow: none;
-	cursor: default;
-}
-
-.graph3d-gizmo__node--y-neg {
-	width: 10px;
-	height: 10px;
-	background: #65a30d;
-	box-shadow: none;
-	cursor: default;
-}
-
-.graph3d-gizmo__node--z-neg {
-	width: 10px;
-	height: 10px;
-	background: #1d4ed8;
-	box-shadow: none;
-	cursor: default;
-}
-
-.graph3d-gizmo__core {
-	position: absolute;
-	left: 50%;
-	top: 50%;
-	width: 12px;
-	height: 12px;
-	border-radius: 999px;
-	background: #94a3b8;
-	transform: translate(-50%, -50%);
-	pointer-events: none;
-}
 
 .graph3d-gimbal-panel__zoom {
 	display: flex;

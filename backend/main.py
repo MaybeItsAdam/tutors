@@ -63,6 +63,8 @@ def _get_byok_provider(request: Request) -> tuple[str, str]:
         raise HTTPException(status_code=400, detail="Missing X-API-Key header")
     if not provider:
         raise HTTPException(status_code=400, detail="Missing X-Provider header")
+    if provider == "google":
+        provider = "gemini"
     if provider not in ALLOWED_PROVIDERS:
         raise HTTPException(status_code=400, detail="Unknown provider")
     return api_key, provider
@@ -115,6 +117,8 @@ async def websocket_chat(websocket: WebSocket):
 
             api_key = message.get("apiKey")
             provider = (message.get("provider") or "").strip().lower()
+            if provider == "google":
+                provider = "gemini"
             model = (message.get("model") or "").strip()
             messages = message.get("messages", [])
 

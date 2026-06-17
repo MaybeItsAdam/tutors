@@ -219,15 +219,18 @@ function Graph3dRenderer({
 		const animate = () => {
 			rafRef.current = requestAnimationFrame(animate)
 			controls.update()
-			const xAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion)
-			const yAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion)
-			const zAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(camera.quaternion)
 			dispatchGraph3dOrientation({
 				shapeId: shape.id,
 				axes: {
-					x: { x: xAxis.x, y: xAxis.y, z: xAxis.z },
-					y: { x: yAxis.x, y: yAxis.y, z: yAxis.z },
-					z: { x: zAxis.x, y: zAxis.y, z: zAxis.z },
+					x: { x: 1, y: 0, z: 0 },
+					y: { x: 0, y: 1, z: 0 },
+					z: { x: 0, y: 0, z: 1 },
+				},
+				quaternion: {
+					x: camera.quaternion.x,
+					y: camera.quaternion.y,
+					z: camera.quaternion.z,
+					w: camera.quaternion.w,
 				},
 			})
 			renderer.render(scene, camera)
