@@ -1,0 +1,776 @@
+From 381aca79440f139fc2629cd6670dce283573a7ec Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 6 Apr 2026 07:30:16 +0000
+Subject: [PATCH] feat: switch AI pipeline to tool use (Claude Code style) with
+ client-side auto-placement
+
+- Replace schema-in-prompt + forced JSON generation with proper tool use API
+  - New shared/schema/buildToolDefinitions.ts converts each AgentAction schema
+    into a Vercel AI SDK tool() definition (action name = tool name, _type stripped
+    from params and re-added by server before emitting SSE)
+  - server/AgentService.ts: uses streamText() with tools + maxSteps:20, enables
+    Anthropic extended thinking, processes fullStream tool-call events instead of
+    incrementally parsing JSON text; removes fake assistant prefix hack
+  - server/prompt/buildSystemPrompt.ts: defaults withSchema to false (tools replace it)
+  - server/prompt/sections/intro-section.ts: rewords from "respond with JSON" to
+    "call the provided tools"
+  - server/prompt/sections/rules-section.ts: replaces JSON schema rules with tool
+    use rules; adds auto-placement note; removes coordinate tips
+  - backend/llm_service.py: switches to litellm tool use API (tools/tool_choice params,
+    tool_call delta accumulation, emits complete actions on finish_reason=tool_calls)
+
+- AI decides WHAT to create; client handles WHERE (auto-placement)
+  - shared/format/FocusedShape.ts: x/y optional on all shape types
+  - shared/schema/AgentActionSchemas.ts: x/y optional on EquationAction
+  - New client/actions/computeAutoPlacement.ts: places new shapes near context items,
+    then selected shapes, then viewport centre
+  - client/actions/CreateActionUtil.ts: injects auto-placement when x/y absent
+  - client/actions/EquationActionUtil.ts: uses auto-placement when x/y absent
+
+Wire format to frontend (SSE data: {action}\n\n) is unchanged.
+
+https://claude.ai/code/session_016Ljx6qNYZ6eseEJg58jpYj
+---
+ backend/llm_service.py                  | 111 +++++++++++++----------
+ client/actions/CreateActionUtil.ts      |  21 +++++
+ client/actions/EquationActionUtil.ts    |  25 ++++--
+ client/actions/computeAutoPlacement.ts  | 113 ++++++++++++++++++++++++
+ server/AgentService.ts                  |  78 ++++------------
+ server/prompt/buildSystemPrompt.ts      |   2 +-
+ server/prompt/sections/intro-section.ts |  14 +--
+ server/prompt/sections/rules-section.ts |  15 ++--
+ shared/format/FocusedShape.ts           |  32 +++----
+ shared/schema/AgentActionSchemas.ts     |   4 +-
+ shared/schema/buildToolDefinitions.ts   |  50 +++++++++++
+ 11 files changed, 312 insertions(+), 153 deletions(-)
+ create mode 100644 client/actions/computeAutoPlacement.ts
+ create mode 100644 shared/schema/buildToolDefinitions.ts
+
+diff --git a/backend/llm_service.py b/backend/llm_service.py
+index 8159d0b..6abc4a5 100644
+--- a/backend/llm_service.py
++++ b/backend/llm_service.py
+@@ -3,75 +3,88 @@ import time
+ import asyncio
+ from typing import AsyncGenerator
+ import litellm
+-from utils import close_and_parse_json
+ 
+ # Configure litellm (optional custom settings)
+ litellm.drop_params = True
+ 
+-async def stream_agent_actions(model: str, messages: list, api_key: str) -> AsyncGenerator[str, None]:
++async def stream_agent_actions(
++    model: str,
++    messages: list,
++    api_key: str,
++    tools: list | None = None,
++) -> AsyncGenerator[str, None]:
+     """
+-    Streams a response from litellm, parsing the JSON stream dynamically,
+-    and yielding complete/incomplete AgentAction JSON objects to mimic the
+-    TypeScript SSE interface expected by TldrawAgent stream handling.
++    Streams a response from litellm using the tool use (function calling) API.
+ 
+-    Detects client disconnects via asyncio.CancelledError so that we stop
+-    consuming tokens from the upstream LLM provider when the user cancels.
++    Each tool call made by the model is emitted as an SSE event with the same
++    shape as an AgentAction: { _type, <params>, complete, time }.
++
++    The `tools` parameter should be a list of OpenAI-format tool definitions:
++    [{ "type": "function", "function": { "name", "description", "parameters" } }]
++
++    Detects client disconnects via asyncio.CancelledError to stop consuming
++    upstream tokens when the user cancels.
+     """
+ 
+-    buffer = '{"actions": [{"_type":'
+-    cursor = 0
+-    maybe_incomplete_action = None
+-    start_time = int(time.time() * 1000)
+     response = None
+ 
+     try:
+-        response = await litellm.acompletion(
++        kwargs: dict = dict(
+             model=model,
+             messages=messages,
+             api_key=api_key,
+             stream=True,
+             temperature=0,
+-            max_tokens=8192
++            max_tokens=8192,
+         )
+ 
++        if tools:
++            kwargs["tools"] = tools
++            kwargs["tool_choice"] = "auto"
++
++        response = await litellm.acompletion(**kwargs)
++
++        # Accumulate streaming tool call deltas by index
++        # Each entry: { id, name, args_str }
++        tool_call_accumulator: dict[int, dict] = {}
++        start_time = int(time.time() * 1000)
++
+         async for chunk in response:
+-            content = chunk.choices[0].delta.content or ""
+-            buffer += content
+-
+-            partial_object = close_and_parse_json(buffer)
+-            if not partial_object:
+-                continue
+-
+-            actions = partial_object.get("actions")
+-            if not isinstance(actions, list) or len(actions) == 0:
+-                continue
+-
+-            if len(actions) > cursor:
+-                # Emit the previous action as complete (skip when cursor==0, there's no previous)
+-                if cursor > 0:
+-                    prev_action = actions[cursor - 1]
+-                    if prev_action:
+-                        prev_action["complete"] = True
+-                        prev_action["time"] = int(time.time() * 1000) - start_time
+-                        yield f"data: {json.dumps(prev_action)}\n\n"
+-                maybe_incomplete_action = None
+-                cursor += 1
+-                start_time = int(time.time() * 1000)
++            choice = chunk.choices[0]
++            delta = choice.delta
++
++            # Accumulate tool call fragments
++            if delta.tool_calls:
++                for tc in delta.tool_calls:
++                    idx = tc.index
++                    if idx not in tool_call_accumulator:
++                        tool_call_accumulator[idx] = {"id": "", "name": "", "args": ""}
++                    entry = tool_call_accumulator[idx]
++                    if tc.id:
++                        entry["id"] = tc.id
++                    if tc.function:
++                        if tc.function.name:
++                            entry["name"] = tc.function.name
++                        if tc.function.arguments:
++                            entry["args"] += tc.function.arguments
+ 
+-            action = actions[cursor - 1] if cursor > 0 else None
+-            if action:
+-                if not maybe_incomplete_action:
+-                    start_time = int(time.time() * 1000)
+-                maybe_incomplete_action = action
+-                action_copy = dict(action)
+-                action_copy["complete"] = False
+-                action_copy["time"] = int(time.time() * 1000) - start_time
+-                yield f"data: {json.dumps(action_copy)}\n\n"
+-
+-        if maybe_incomplete_action:
+-            maybe_incomplete_action["complete"] = True
+-            maybe_incomplete_action["time"] = int(time.time() * 1000) - start_time
+-            yield f"data: {json.dumps(maybe_incomplete_action)}\n\n"
++            # When a round of tool calls is complete, emit them and reset
++            if choice.finish_reason == "tool_calls":
++                for tc in tool_call_accumulator.values():
++                    try:
++                        args = json.loads(tc["args"]) if tc["args"] else {}
++                        action = {
++                            "_type": tc["name"],
++                            **args,
++                            "complete": True,
++                            "time": int(time.time() * 1000) - start_time,
++                        }
++                        yield f"data: {json.dumps(action)}\n\n"
++                    except json.JSONDecodeError as e:
++                        print(f"Failed to parse tool call args for {tc['name']}: {e}")
++
++                tool_call_accumulator = {}
++                start_time = int(time.time() * 1000)
+ 
+     except asyncio.CancelledError:
+         # Client disconnected — close the upstream LLM stream to stop burning tokens
+diff --git a/client/actions/CreateActionUtil.ts b/client/actions/CreateActionUtil.ts
+index fad4d74..eeb3fe2 100644
+--- a/client/actions/CreateActionUtil.ts
++++ b/client/actions/CreateActionUtil.ts
+@@ -8,6 +8,7 @@ import { CreateAction } from '../../shared/schema/AgentActionSchemas'
+ import { Streaming } from '../../shared/types/Streaming'
+ import { AgentHelpers } from '../AgentHelpers'
+ import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
++import { computeAutoPlacement } from './computeAutoPlacement'
+ 
+ export const CreateActionUtil = registerActionUtil(
+ 	class CreateActionUtil extends AgentActionUtil<CreateAction> {
+@@ -69,6 +70,26 @@ export const CreateActionUtil = registerActionUtil(
+ 			// Translate the shape back to the chat's position
+ 			const shapePartial = helpers.removeOffsetFromShapePartial(shape)
+ 
++			// Auto-place if the AI omitted coordinates (Claude Code style: AI decides WHAT, client decides WHERE)
++			if ('x' in shapePartial && shapePartial.x === undefined) {
++				const contextItems = helpers.agent.context.getItems()
++				const w = (shapePartial as any).w ?? 100
++				const h = (shapePartial as any).h ?? 100
++				const { x, y } = computeAutoPlacement(editor, contextItems, w, h)
++				;(shapePartial as any).x = x
++				;(shapePartial as any).y = y
++			}
++
++			// Auto-place arrows and lines if start/end points were omitted
++			if ('x1' in shapePartial && shapePartial.x1 === undefined) {
++				const contextItems = helpers.agent.context.getItems()
++				const { x, y } = computeAutoPlacement(editor, contextItems)
++				;(shapePartial as any).x1 = x
++				;(shapePartial as any).y1 = y
++				;(shapePartial as any).x2 = x + 200
++				;(shapePartial as any).y2 = y
++			}
++
+ 			const result = convertPartialFocusedShapeToTldrawShape(editor, shapePartial, {
+ 				defaultShape: getDefaultShape(shape._type, action.complete),
+ 				complete: action.complete,
+diff --git a/client/actions/EquationActionUtil.ts b/client/actions/EquationActionUtil.ts
+index 9b07833..c937d15 100644
+--- a/client/actions/EquationActionUtil.ts
++++ b/client/actions/EquationActionUtil.ts
+@@ -5,6 +5,7 @@ import { AgentActionUtil } from './AgentActionUtil'
+ import { IEquationShape } from '../shapes/equation/EquationShape'
+ 
+ import { Streaming } from '../../shared/types/Streaming'
++import { computeAutoPlacement } from './computeAutoPlacement'
+ 
+ export class EquationActionUtil extends AgentActionUtil<EquationAction> {
+ 	static override type = 'equation' as const
+@@ -12,25 +13,31 @@ export class EquationActionUtil extends AgentActionUtil<EquationAction> {
+ 	override sanitizeAction(action: Streaming<EquationAction>): Streaming<EquationAction> | null {
+ 		return {
+ 			...action,
+-			x: typeof action.x === 'number' ? action.x : 0,
+-			y: typeof action.y === 'number' ? action.y : 0,
++			// x/y left undefined if not provided — applyAction handles fallback via auto-placement
++			x: typeof action.x === 'number' ? action.x : undefined,
++			y: typeof action.y === 'number' ? action.y : undefined,
+ 			latex: action.latex || '',
+ 		}
+ 	}
+ 
+ 	override applyAction(action: Streaming<EquationAction>, helpers: AgentHelpers) {
+ 		const shapeId = createShapeId()
+-		
+-		const x = typeof action.x === 'number' ? action.x : 0
+-		const y = typeof action.y === 'number' ? action.y : 0
+ 
+-		// Revert the offset so coordinates map to absolute canvas position
+-		const position = helpers.removeOffsetFromVec({ x, y })
+-
+-		// Default size; the shape uses auto-resize so it will adjust to KaTeX rendering
++		// Default size — the shape auto-resizes to fit KaTeX rendering
+ 		const width = 300
+ 		const height = 100
+ 
++		let position: { x: number; y: number }
++
++		if (typeof action.x === 'number' && typeof action.y === 'number') {
++			// AI provided explicit coordinates — convert from model space to canvas space
++			position = helpers.removeOffsetFromVec({ x: action.x, y: action.y })
++		} else {
++			// Auto-place near context (Claude Code style: AI decides WHAT, client decides WHERE)
++			const contextItems = helpers.agent.context.getItems()
++			position = computeAutoPlacement(this.editor, contextItems, width, height)
++		}
++
+ 		this.editor.createShape<IEquationShape>({
+ 			id: shapeId,
+ 			type: 'equation',
+diff --git a/client/actions/computeAutoPlacement.ts b/client/actions/computeAutoPlacement.ts
+new file mode 100644
+index 0000000..90278b2
+--- /dev/null
++++ b/client/actions/computeAutoPlacement.ts
+@@ -0,0 +1,113 @@
++import { Box, Editor } from 'tldraw'
++import { ContextItem } from '../../shared/types/ContextItem'
++
++/**
++ * Compute the bounding box that covers all provided context items.
++ * Context items are in canvas (absolute) space.
++ */
++function getContextBounds(editor: Editor, items: ContextItem[]): Box | null {
++	const boxes: Box[] = []
++
++	for (const item of items) {
++		switch (item.type) {
++			case 'area': {
++				boxes.push(new Box(item.bounds.x, item.bounds.y, item.bounds.w, item.bounds.h))
++				break
++			}
++			case 'shape': {
++				const shape = item.shape
++				if ('x' in shape && shape.x !== undefined && 'y' in shape && shape.y !== undefined) {
++					const w = ('w' in shape ? (shape as any).w : undefined) ?? 100
++					const h = ('h' in shape ? (shape as any).h : undefined) ?? 100
++					boxes.push(new Box(shape.x, shape.y, w, h))
++				}
++				break
++			}
++			case 'shapes': {
++				for (const shape of item.shapes) {
++					if ('x' in shape && shape.x !== undefined && 'y' in shape && shape.y !== undefined) {
++						const w = ('w' in shape ? (shape as any).w : undefined) ?? 100
++						const h = ('h' in shape ? (shape as any).h : undefined) ?? 100
++						boxes.push(new Box(shape.x, shape.y, w, h))
++					}
++				}
++				break
++			}
++			case 'point': {
++				boxes.push(new Box(item.point.x, item.point.y, 0, 0))
++				break
++			}
++		}
++	}
++
++	if (boxes.length === 0) return null
++
++	// Try to look up the actual tldraw shape bounds via the editor for better accuracy
++	const shapeBounds = items
++		.filter((i) => i.type === 'shape' || i.type === 'shapes')
++		.flatMap((i) => {
++			if (i.type === 'shape') {
++				const id = `shape:${(i.shape as any).shapeId}` as any
++				return id ? [editor.getShapePageBounds(id)].filter(Boolean) : []
++			}
++			if (i.type === 'shapes') {
++				return i.shapes
++					.map((s) => {
++						const id = `shape:${(s as any).shapeId}` as any
++						return id ? editor.getShapePageBounds(id) : null
++					})
++					.filter(Boolean)
++			}
++			return []
++		})
++
++	if (shapeBounds.length > 0) {
++		return Box.Common(shapeBounds as Box[])
++	}
++
++	return Box.Common(boxes)
++}
++
++/**
++ * Compute canvas-space (absolute) x/y coordinates for a new shape that has
++ * no position specified by the AI.
++ *
++ * Placement priority:
++ *  1. To the right of the union bounding box of all context items
++ *  2. To the right of the current selection bounding box
++ *  3. Centred in the current viewport
++ */
++export function computeAutoPlacement(
++	editor: Editor,
++	contextItems: ContextItem[],
++	shapeW = 100,
++	shapeH = 100,
++	gap = 48
++): { x: number; y: number } {
++	// 1. Context items
++	if (contextItems.length > 0) {
++		const ctxBounds = getContextBounds(editor, contextItems)
++		if (ctxBounds) {
++			return {
++				x: ctxBounds.maxX + gap,
++				y: ctxBounds.midY - shapeH / 2,
++			}
++		}
++	}
++
++	// 2. Selection
++	const selBounds = editor.getSelectionRotatedPageBounds()
++	if (selBounds) {
++		return {
++			x: selBounds.maxX + gap,
++			y: selBounds.midY - shapeH / 2,
++		}
++	}
++
++	// 3. Viewport centre
++	const vp = editor.getViewportPageBounds()
++	return {
++		x: vp.midX - shapeW / 2,
++		y: vp.midY - shapeH / 2,
++	}
++}
+diff --git a/server/AgentService.ts b/server/AgentService.ts
+index db9c08f..3603813 100644
+--- a/server/AgentService.ts
++++ b/server/AgentService.ts
+@@ -4,13 +4,13 @@ import { createOpenAI, OpenAIProvider } from '@ai-sdk/openai'
+ import { LanguageModel, ModelMessage, streamText } from 'ai'
+ import { AgentModelName, getAgentModelDefinition, isValidModelName } from '../shared/models'
+ import { DebugPart } from '../shared/schema/PromptPartDefinitions'
++import { buildToolDefinitions } from '../shared/schema/buildToolDefinitions'
+ import { AgentAction } from '../shared/types/AgentAction'
+ import { AgentPrompt } from '../shared/types/AgentPrompt'
+ import { Streaming } from '../shared/types/Streaming'
+ import { buildMessages } from './prompt/buildMessages'
+ import { buildSystemPrompt } from './prompt/buildSystemPrompt'
+ import { getModelName } from './prompt/getModelName'
+-import { closeAndParseJson } from './closeAndParseJson'
+ 
+ export interface ServerEnvironment {
+ 	OPENAI_API_KEY: string
+@@ -60,7 +60,9 @@ export class AgentService {
+ 		}
+ 
+ 		const modelDefinition = getAgentModelDefinition(modelId)
+-		const systemPrompt = buildSystemPrompt(prompt)
++
++		// Build system prompt — schema is omitted because tools provide it
++		const systemPrompt = buildSystemPrompt(prompt, { withSchema: false })
+ 
+ 		// Build messages with provider-specific options
+ 		const messages: ModelMessage[] = []
+@@ -89,33 +91,33 @@ export class AgentService {
+ 		const debugPart = prompt.debug as DebugPart | undefined
+ 		if (debugPart) {
+ 			if (debugPart.logSystemPrompt) {
+-				const promptWithoutSchema = buildSystemPrompt(prompt, { withSchema: false })
+-				console.log('[DEBUG] System Prompt (without schema):\n', promptWithoutSchema)
++				console.log('[DEBUG] System Prompt:\n', systemPrompt)
+ 			}
+ 			if (debugPart.logMessages) {
+ 				console.log('[DEBUG] Messages:\n', JSON.stringify(promptMessages, null, 2))
+ 			}
+ 		}
+ 
+-		// Add the assistant message to indicate the start of the actions
+-		messages.push({
+-			role: 'assistant',
+-			content: '{"actions": [{"_type":',
+-		})
++		// Build tool definitions from the current mode's action types
++		const actionTypes = (prompt.mode as any)?.actionTypes as AgentAction['_type'][] | undefined
++		const modeType = (prompt.mode as any)?.modeType as string | undefined
++		const tools = actionTypes && modeType ? buildToolDefinitions(actionTypes, modeType) : {}
+ 
+ 		// Configure thinking budgets based on model
+ 		const geminiThinkingBudget = modelDefinition.thinking ? 256 : 0
+ 		const openaiReasoningEffort = provider === 'openai.responses' ? 'none' : 'minimal'
+ 
+ 		try {
+-			const { textStream } = streamText({
++			const result = streamText({
+ 				model,
+ 				messages,
++				tools,
++				maxSteps: 20,
+ 				maxOutputTokens: 8192,
+ 				temperature: 0,
+ 				providerOptions: {
+ 					anthropic: {
+-						thinking: { type: 'disabled' },
++						thinking: { type: 'enabled', budgetTokens: 8000 },
+ 					},
+ 					google: {
+ 						thinkingConfig: { thinkingBudget: geminiThinkingBudget },
+@@ -133,61 +135,17 @@ export class AgentService {
+ 				},
+ 			})
+ 
+-			const canForceResponseStart =
+-				provider === 'anthropic.messages' || provider === 'google.generative-ai'
+-			let buffer = canForceResponseStart ? '{"actions": [{"_type":' : ''
+-			let cursor = 0
+-			let maybeIncompleteAction: AgentAction | null = null
+-
+ 			let startTime = Date.now()
+-			for await (const text of textStream) {
+-				buffer += text
+-
+-				const partialObject = closeAndParseJson(buffer)
+-				if (!partialObject) continue
+-
+-				const actions = partialObject.actions
+-				if (!Array.isArray(actions)) continue
+-				if (actions.length === 0) continue
+-
+-				if (actions.length > cursor) {
+-					// Emit the previous action as complete (skip when cursor==0, there's no previous)
+-					if (cursor > 0) {
+-						const prevAction = actions[cursor - 1] as AgentAction
+-						if (prevAction) {
+-							yield {
+-								...prevAction,
+-								complete: true,
+-								time: Date.now() - startTime,
+-							}
+-						}
+-					}
+-					maybeIncompleteAction = null
+-					cursor++
+-					startTime = Date.now()
+-				}
+-
+-				const action = actions[cursor - 1] as AgentAction | undefined
+-				if (action) {
+-					if (!maybeIncompleteAction) {
+-						startTime = Date.now()
+-					}
+-
+-					maybeIncompleteAction = action
+ 
++			for await (const chunk of result.fullStream) {
++				if (chunk.type === 'tool-call') {
++					const action = { _type: chunk.toolName, ...chunk.args } as AgentAction
+ 					yield {
+ 						...action,
+-						complete: false,
++						complete: true,
+ 						time: Date.now() - startTime,
+ 					}
+-				}
+-			}
+-
+-			if (maybeIncompleteAction) {
+-				yield {
+-					...maybeIncompleteAction,
+-					complete: true,
+-					time: Date.now() - startTime,
++					startTime = Date.now()
+ 				}
+ 			}
+ 		} catch (error: any) {
+diff --git a/server/prompt/buildSystemPrompt.ts b/server/prompt/buildSystemPrompt.ts
+index 6184132..c3afb5c 100644
+--- a/server/prompt/buildSystemPrompt.ts
++++ b/server/prompt/buildSystemPrompt.ts
+@@ -19,7 +19,7 @@ import { buildRulesPromptSection } from './sections/rules-section'
+  */
+ export function buildSystemPrompt(
+ 	prompt: AgentPrompt,
+-	opts: { withSchema: boolean } = { withSchema: true }
++	opts: { withSchema: boolean } = { withSchema: false }
+ ): string {
+ 	const { withSchema = true } = opts
+ 
+diff --git a/server/prompt/sections/intro-section.ts b/server/prompt/sections/intro-section.ts
+index 7744432..fb5722b 100644
+--- a/server/prompt/sections/intro-section.ts
++++ b/server/prompt/sections/intro-section.ts
+@@ -2,16 +2,16 @@ import { SystemPromptFlags } from '../getSystemPromptFlags'
+ import { flagged } from './flagged'
+ 
+ export function buildIntroPromptSection(flags: SystemPromptFlags) {
+-	return `You are an AI agent that helps the user use a drawing / diagramming / whiteboarding program. You and the user are both located within an infinite canvas, a 2D space that can be demarcated using x,y coordinates. You will be provided with a set of helpful information that includes a description of what the user would like you to do, along with the user's intent and the current state of the canvas${flagged(flags.hasScreenshotPart, ', including an image, which is your view of the part of the canvas contained within your viewport')}${flagged(flags.hasChatHistoryPart, ". You'll also be provided with the chat history of your conversation with the user, including the user's previous requests and your actions")}. Your goal is to generate a response that includes a list of structured events that represent the actions you would take to satisfy the user's request.
++	return `You are an AI agent that helps the user use a drawing / diagramming / whiteboarding program. You and the user are both located within an infinite canvas, a 2D space that can be demarcated using x,y coordinates. You will be provided with a set of helpful information that includes a description of what the user would like you to do, along with the user's intent and the current state of the canvas${flagged(flags.hasScreenshotPart, ', including an image, which is your view of the part of the canvas contained within your viewport')}${flagged(flags.hasChatHistoryPart, ". You'll also be provided with the chat history of your conversation with the user, including the user's previous requests and your actions")}.
+ 
+-You respond with structured JSON data based on a predefined schema.
++Your goal is to call the provided tools to interact with the canvas and satisfy the user's request. Each tool corresponds to a canvas action (creating shapes, editing text, drawing arrows, and so on). You can call multiple tools in sequence — after each tool call you will receive feedback confirming it was applied, allowing you to continue or adjust your approach.
+ 
+-## Schema overview
++## How to use the tools
+ 
+-You are interacting with a system that models shapes (rectangles, ellipses, triangles, text, and many more) and carries out actions defined by events (creating, moving, labeling, deleting, thinking, and many more). Your response should include:
++You interact with the canvas exclusively by calling the tools provided to you. Each tool corresponds to a canvas action. Use tools to create, edit, move, and organise shapes on the canvas.
+ 
+-- **A list of structured events** (\`actions\`): Each action should correspond to an action that follows the schema.
+-
+-For the full list of events, refer to the JSON schema.
++- Call tools one at a time or in parallel as needed.
++- You do not need to specify \`x\` or \`y\` coordinates when creating shapes — the system automatically places new shapes near any relevant context on the canvas. Focus on describing *what* to create rather than *where* to place it.
++- For the full list of available tools and their parameters, refer to the tool definitions provided to you.
+ `
+ }
+diff --git a/server/prompt/sections/rules-section.ts b/server/prompt/sections/rules-section.ts
+index 8595be2..c1353c1 100644
+--- a/server/prompt/sections/rules-section.ts
++++ b/server/prompt/sections/rules-section.ts
+@@ -16,7 +16,7 @@ ${shapeTypeNames.map((type) => `- **${type.charAt(0).toUpperCase() + type.slice(
+ Each shape has:
+ 
+ - \`_type\` (one of ${shapeTypeNames.map((type) => `\`${type}\``).join(', ')})
+-- \`x\`, \`y\` (numbers, coordinates, typically the top left corner of the shape, but text shapes use anchor-based positioning) (except for arrows and lines, which have \`x1\`, \`y1\`, \`x2\`, \`y2\`)
++- \`x\`, \`y\` (optional — omit them when creating new shapes; the system places new shapes automatically near any relevant context. Arrows and lines use \`x1\`, \`y1\`, \`x2\`, \`y2\` instead, also optional for new shapes.)
+ - \`note\` (a description of the shape's purpose or intent) (invisible to the user)
+ 
+ Shapes may also have different properties depending on their type:
+@@ -50,16 +50,12 @@ Arrows and lines have:
+ `
+ }
+ 
+-## Event schema
+-
+-Refer to the JSON schema for the full list of available events, their properties, and their descriptions. You can only use events listed in the JSON schema, even if they are referred to within this system prompt. Use the schema as the source of truth on what is available. Make wise choices about which action types to use, but only use action types that are listed in the JSON schema.
+-
+ ## Rules
+ 
+-1. **Always return a valid JSON object conforming to the schema.**
+-2. **Do not generate extra fields or omit required fields.**
+-3. **Use meaningful \`intent\` descriptions for all actions.**
+-${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent across related events.**')}
++1. **Only call tools that are available to you.** Do not reference or describe actions that aren't listed in the tool definitions.
++2. **Do not omit required tool parameters.** Provide all required fields for every tool call.
++3. **Use meaningful \`intent\` descriptions for all tool calls.**
++${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent across related tool calls.**')}
+ 
+ ## Useful notes
+ 
+@@ -67,6 +63,7 @@ ${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent ac
+ 
+ - The coordinate space is the same as on a website: 0,0 is the top left corner. The x-axis increases as you scroll to the right. The y-axis increases as you scroll down the canvas.
+ - For most shapes, the x and y define the top left corner of the shape. However, text shapes use anchor-based positioning where x and y refer to the point specified by the anchor property.
++- **When creating new shapes, omit \`x\` and \`y\` entirely.** The system will automatically place new shapes near any relevant context (selected shapes, targeted area, etc.). You can still use \`place\`, \`move\`, \`align\`, \`stack\`, and \`distribute\` to control the layout of existing shapes after they are created.
+ 
+ ${flagged(
+ 	flags.canEdit,
+diff --git a/shared/format/FocusedShape.ts b/shared/format/FocusedShape.ts
+index d699679..5c0e6ff 100644
+--- a/shared/format/FocusedShape.ts
++++ b/shared/format/FocusedShape.ts
+@@ -31,8 +31,8 @@ export const FocusedGeoShape = z.object({
+ 	text: FocusedLabel.optional(),
+ 	textAlign: z.enum(['start', 'middle', 'end']).optional(),
+ 	w: z.number(),
+-	x: z.number(),
+-	y: z.number(),
++	x: z.number().optional(),
++	y: z.number().optional(),
+ })
+ 
+ export type FocusedGeoShape = z.infer<typeof FocusedGeoShape>
+@@ -45,10 +45,10 @@ const FocusedLineShape = z.object({
+ 	color: FocusedColor,
+ 	note: z.string(),
+ 	shapeId: SimpleShapeIdSchema,
+-	x1: z.number(),
+-	x2: z.number(),
+-	y1: z.number(),
+-	y2: z.number(),
++	x1: z.number().optional(),
++	x2: z.number().optional(),
++	y1: z.number().optional(),
++	y2: z.number().optional(),
+ })
+ 
+ export type FocusedLineShape = z.infer<typeof FocusedLineShape>
+@@ -59,8 +59,8 @@ const FocusedNoteShape = z.object({
+ 	note: z.string(),
+ 	shapeId: SimpleShapeIdSchema,
+ 	text: FocusedLabel.optional(),
+-	x: z.number(),
+-	y: z.number(),
++	x: z.number().optional(),
++	y: z.number().optional(),
+ })
+ 
+ export type FocusedNoteShape = z.infer<typeof FocusedNoteShape>
+@@ -75,8 +75,8 @@ const FocusedTextShape = z
+ 		note: z.string(),
+ 		shapeId: SimpleShapeIdSchema,
+ 		text: FocusedLabel,
+-		x: z.number(),
+-		y: z.number(),
++		x: z.number().optional(),
++		y: z.number().optional(),
+ 	})
+ 	.meta({
+ 		title: 'Text Shape',
+@@ -97,10 +97,10 @@ const FocusedArrowShape = z.object({
+ 	shapeId: SimpleShapeIdSchema,
+ 	text: z.string().optional(),
+ 	toId: SimpleShapeIdSchema.nullable(),
+-	x1: z.number(),
+-	x2: z.number(),
+-	y1: z.number(),
+-	y2: z.number(),
++	x1: z.number().optional(),
++	x2: z.number().optional(),
++	y1: z.number().optional(),
++	y2: z.number().optional(),
+ 	bend: z.number().optional(),
+ })
+ 
+@@ -128,8 +128,8 @@ const FocusedUnknownShape = z
+ 		note: z.string(),
+ 		shapeId: SimpleShapeIdSchema,
+ 		subType: z.string(),
+-		x: z.number(),
+-		y: z.number(),
++		x: z.number().optional(),
++		y: z.number().optional(),
+ 	})
+ 	.meta({
+ 		title: 'Unknown Shape',
+diff --git a/shared/schema/AgentActionSchemas.ts b/shared/schema/AgentActionSchemas.ts
+index e3dc5c6..1b3b48b 100644
+--- a/shared/schema/AgentActionSchemas.ts
++++ b/shared/schema/AgentActionSchemas.ts
+@@ -30,8 +30,8 @@ export const EquationAction = z
+ 		_type: z.literal('equation'),
+ 		intent: z.string(),
+ 		latex: z.string(),
+-		x: z.number(),
+-		y: z.number(),
++		x: z.number().optional(),
++		y: z.number().optional(),
+ 	})
+ 	.meta({
+ 		title: 'Equation',
+diff --git a/shared/schema/buildToolDefinitions.ts b/shared/schema/buildToolDefinitions.ts
+new file mode 100644
+index 0000000..247f627
+--- /dev/null
++++ b/shared/schema/buildToolDefinitions.ts
+@@ -0,0 +1,50 @@
++import { tool } from 'ai'
++import z from 'zod'
++import { AgentAction } from '../types/AgentAction'
++import { getActionSchemaForMode } from './AgentActionSchemaRegistry'
++
++/**
++ * Strip the `_type` discriminator field from an action schema.
++ * When using tool use, the tool name *is* the action type — the model
++ * doesn't need to repeat it inside the parameters.
++ */
++function stripTypeField(schema: z.ZodObject<z.ZodRawShape>): z.ZodObject<z.ZodRawShape> {
++	const { _type: _, ...rest } = schema.shape
++	return z.object(rest)
++}
++
++/**
++ * Build Vercel AI SDK tool definitions from action schemas.
++ *
++ * Each action type becomes a named tool whose:
++ * - name      = action `_type` value
++ * - description = action schema `.meta().description` (or title)
++ * - parameters  = action schema *without* the `_type` field
++ *
++ * The server reconstructs the full `AgentAction` by re-attaching `_type`
++ * from the tool name when it emits the SSE event to the client.
++ *
++ * The `execute` function returns a simple acknowledgment so the model
++ * receives feedback after each tool call and can decide on further steps
++ * (multi-step loop via `maxSteps` in `streamText`).
++ */
++export function buildToolDefinitions(actionTypes: AgentAction['_type'][], mode: string) {
++	const tools: Record<string, ReturnType<typeof tool>> = {}
++
++	for (const actionType of actionTypes) {
++		const schema = getActionSchemaForMode(actionType, mode)
++		if (!schema || !(schema instanceof z.ZodObject)) continue
++
++		const meta = (schema.meta() ?? {}) as { description?: string; title?: string }
++		const description = meta.description ?? meta.title ?? actionType
++		const parameters = stripTypeField(schema as z.ZodObject<z.ZodRawShape>)
++
++		tools[actionType] = tool({
++			description,
++			parameters,
++			execute: async (_args) => ({ success: true, actionType }),
++		})
++	}
++
++	return tools
++}
+-- 
+2.43.0
+
