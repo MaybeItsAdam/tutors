@@ -8,13 +8,30 @@ on:
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    env:
+      # Registry downloads on hosted runners occasionally drop (ECONNRESET) —
+      # retry aggressively at the npm level before giving up.
+      NPM_CONFIG_FETCH_RETRIES: '5'
+      NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: '20000'
+      NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: '120000'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - name: Install dependencies (retry on network failure)
+        run: |
+          n=0
+          until npm ci --no-audit --no-fund; do
+            n=$((n+1))
+            if [ "$n" -ge 3 ]; then
+              echo "npm ci failed after $n attempts" >&2
+              exit 1
+            fi
+            echo "npm ci failed (attempt $n), retrying in $((n*30))s..."
+            sleep $((n*30))
+          done
       - run: npm run typecheck
       - run: npm run build
 
