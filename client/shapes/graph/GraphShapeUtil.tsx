@@ -262,7 +262,6 @@ function areSlidersEqual(a: GraphSlider[], b: GraphSlider[]) {
 	return true
 }
 
-// @ts-expect-error — tldraw's TLShape union is closed; custom shapes work fine at runtime
 export class GraphShapeUtil extends ShapeUtil<IGraphShape> {
 	static override type = 'graph' as const
 	static override props = graphShapeProps

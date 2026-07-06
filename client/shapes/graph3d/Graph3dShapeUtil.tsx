@@ -188,7 +188,8 @@ function Graph3dRenderer({
 		controls.dampingFactor = 0.08
 		controls.enablePan = false
 		controls.mouseButtons = {
-			LEFT: THREE.MOUSE.NONE,
+			// null disables the button (MOUSE.NONE does not exist in three)
+			LEFT: null,
 			MIDDLE: THREE.MOUSE.DOLLY,
 			RIGHT: THREE.MOUSE.ROTATE,
 		}

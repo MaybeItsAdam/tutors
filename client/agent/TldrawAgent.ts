@@ -1,7 +1,7 @@
 import { Editor, RecordsDiff, reverseRecordsDiff, structuredClone, TLRecord } from 'tldraw'
 import { convertTldrawShapeToFocusedShape } from '../../shared/format/convertTldrawShapeToFocusedShape'
 import { AgentModelName, AGENT_MODEL_DEFINITIONS } from '../../shared/models'
-import { AgentAction } from '../../shared/types/AgentAction'
+import { AgentAction, getActionSchemaForMode } from '../../shared/types/AgentAction'
 import { AgentInput } from '../../shared/types/AgentInput'
 import { AgentPrompt, BaseAgentPrompt } from '../../shared/types/AgentPrompt'
 import { AgentRequest } from '../../shared/types/AgentRequest'
@@ -324,7 +324,7 @@ export class TldrawAgent {
 		try {
 			await this.request(request)
 		} catch (e) {
-			console.error('Error data:', e)
+			this.onError(e)
 			this.requests.setIsPrompting(false)
 			this.requests.setCancelFn(null)
 			return
@@ -589,7 +589,9 @@ export class TldrawAgent {
 			)
 		}
 
-		const availableActions = modeDefinition.actions
+		const availableActions: readonly AgentAction['_type'][] = modeDefinition.actions
+
+		const modeType = this.mode.getCurrentModeType()
 
 		const requestPromise = (async () => {
 			const prompt = await this.preparePrompt(request, helpers)
@@ -621,6 +623,17 @@ export class TldrawAgent {
 									// Track the inverse diff to update created shapes tracking
 									this.lints.trackShapesFromDiff(inversePrevDiff)
 									incompleteDiff = null
+								}
+
+								// Validate completed actions against their schema. Partial
+								// actions are inherently incomplete so are only validated once
+								// the model has finished streaming them.
+								if (action.complete) {
+									const schema = getActionSchemaForMode(action._type, modeType)
+									if (schema && !schema.safeParse(action).success) {
+										console.warn('Skipping action that failed schema validation:', action)
+										return
+									}
 								}
 
 								// Sanitize the agent's action
@@ -662,6 +675,27 @@ export class TldrawAgent {
 					return
 				}
 				this.onError(e)
+			} finally {
+				// If the stream ended (cancel, error, truncation) while an
+				// incomplete action was still applied, revert it. Otherwise a
+				// locked, half-formed shape is left stranded on the canvas.
+				const danglingDiff: RecordsDiff<TLRecord> | null = incompleteDiff
+				if (danglingDiff) {
+					incompleteDiff = null
+					this.setIsActingOnEditor(true)
+					try {
+						editor.run(
+							() => {
+								const inverseDiff = reverseRecordsDiff(danglingDiff)
+								editor.store.applyDiff(inverseDiff)
+								this.lints.trackShapesFromDiff(inverseDiff)
+							},
+							{ ignoreShapeLock: true, history: 'ignore' }
+						)
+					} finally {
+						this.setIsActingOnEditor(false)
+					}
+				}
 			}
 		})()
 
@@ -700,66 +734,91 @@ export class TldrawAgent {
 		const modelDef = AGENT_MODEL_DEFINITIONS[modelName]
 		const byokConfig = BYOKStore.getConfig()
 
-		const apiBase = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
-		const res = await fetch(`${apiBase}/api/chat`, {
-			method: 'POST',
-			body: JSON.stringify({
-				messages,
-			}),
-			headers: {
-				'Content-Type': 'application/json',
-				...(byokConfig.apiKey ? {
-					'X-API-Key': byokConfig.apiKey,
-					'X-Provider': byokConfig.provider,
-					'X-Model': modelDef.id,
-				} : {}),
-			},
-			signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
-		})
+		// The provider must match the selected model — the BYOK setting only
+		// says which key the user saved, and the two can disagree.
+		const provider = modelDef.provider === 'google' ? 'gemini' : modelDef.provider
 
-		if (!res.ok) {
-			const text = await res.text().catch(() => `HTTP ${res.status}`)
-			throw new Error(`Request failed (${res.status}): ${text}`)
+		// Abort if the stream goes quiet for too long, rather than capping the
+		// total duration — a healthy long generation should never be killed.
+		const IDLE_TIMEOUT_MS = 90_000
+		const idleController = new AbortController()
+		let idleTimer: ReturnType<typeof setTimeout> | null = null
+		const resetIdleTimer = () => {
+			if (idleTimer) clearTimeout(idleTimer)
+			idleTimer = setTimeout(
+				() => idleController.abort('Timed out waiting for the model to respond'),
+				IDLE_TIMEOUT_MS
+			)
 		}
-
-		if (!res.body) {
-			throw Error('No body in response')
-		}
-
-		const reader = res.body.getReader()
-		const decoder = new TextDecoder()
-		let buffer = ''
+		resetIdleTimer()
 
 		try {
-			while (true) {
-				const { value, done } = await reader.read()
-				if (done) break
+			const apiBase = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
+			const res = await fetch(`${apiBase}/api/chat`, {
+				method: 'POST',
+				body: JSON.stringify({
+					messages,
+				}),
+				headers: {
+					'Content-Type': 'application/json',
+					...(byokConfig.apiKey ? {
+						'X-API-Key': byokConfig.apiKey,
+						'X-Provider': provider,
+						'X-Model': modelDef.id,
+					} : {}),
+				},
+				signal: AbortSignal.any([signal, idleController.signal]),
+			})
 
-				buffer += decoder.decode(value, { stream: true })
-				const actions = buffer.split('\n\n')
-				buffer = actions.pop() || ''
+			if (!res.ok) {
+				const text = await res.text().catch(() => `HTTP ${res.status}`)
+				throw new Error(`Request failed (${res.status}): ${text}`)
+			}
 
-				for (const action of actions) {
-					const match = action.match(/^data: (.+)$/m)
-					if (match) {
+			if (!res.body) {
+				throw Error('No body in response')
+			}
+
+			const reader = res.body.getReader()
+			const decoder = new TextDecoder()
+			let buffer = ''
+
+			try {
+				while (true) {
+					const { value, done } = await reader.read()
+					if (done) break
+					resetIdleTimer()
+
+					buffer += decoder.decode(value, { stream: true })
+					const actions = buffer.split('\n\n')
+					buffer = actions.pop() || ''
+
+					for (const action of actions) {
+						const match = action.match(/^data: (.+)$/m)
+						if (!match) continue
+
+						// A malformed event shouldn't kill the whole stream — skip it
+						let data: any
 						try {
-							const data = JSON.parse(match[1])
-
-							// If the response contains an error, throw it
-							if ('error' in data) {
-								throw new Error(data.error)
-							}
-
-							const agentAction: Streaming<AgentAction> = data
-							yield agentAction
-						} catch (err: any) {
-							throw new Error(err.message)
+							data = JSON.parse(match[1])
+						} catch {
+							console.warn('Skipping malformed stream event:', match[1])
+							continue
 						}
+
+						// If the response contains an error, throw it
+						if (data && typeof data === 'object' && 'error' in data) {
+							throw new Error(String(data.error))
+						}
+
+						yield data as Streaming<AgentAction>
 					}
 				}
+			} finally {
+				reader.releaseLock()
 			}
 		} finally {
-			reader.releaseLock()
+			if (idleTimer) clearTimeout(idleTimer)
 		}
 	}
 }

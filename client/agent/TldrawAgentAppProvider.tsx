@@ -78,30 +78,38 @@ export const TldrawAgentAppProvider = memo(function TldrawAgentAppProvider({
 	// Create the TldrawAgentApp instance
 	useEffect(() => {
 		const instance = new TldrawAgentApp(editor, { onError: handleError })
+		let disposed = false
 
-		// Load persisted workspace state first; workspace snapshots include app/agent state
-		// restoration, so this replaces direct persistence.loadState() at startup.
-		instance.workspaces.loadState()
+		// Load persisted workspace state first (async — reads IndexedDB); workspace
+		// snapshots include app/agent state restoration, so this replaces direct
+		// persistence.loadState() at startup.
+		instance.workspaces
+			.loadState()
+			.catch(handleError)
+			.then(() => {
+				if (disposed) return
 
-		// Ensure at least one agent exists (safety for legacy/empty state)
-		const defaultAgent = instance.agents.ensureAtLeastOneAgent()
+				// Ensure at least one agent exists (safety for legacy/empty state)
+				const defaultAgent = instance.agents.ensureAtLeastOneAgent()
 
-		// Start auto-saving (must be after loadState to avoid saving during load)
-		instance.persistence.startAutoSave()
+				// Start auto-saving (must be after loadState to avoid saving during load)
+				instance.persistence.startAutoSave()
 
-		setApp(instance)
+				setApp(instance)
 
-		// Notify parent
-		onMount?.(instance)
+				// Notify parent
+				onMount?.(instance)
 
-		// Expose to window for debugging (dev only)
-		if (import.meta.env.DEV) {
-			;(window as any).agentApp = instance
-			;(window as any).agent = defaultAgent
-			;(window as any).editor = editor
-		}
+				// Expose to window for debugging (dev only)
+				if (import.meta.env.DEV) {
+					;(window as any).agentApp = instance
+					;(window as any).agent = defaultAgent
+					;(window as any).editor = editor
+				}
+			})
 
 		return () => {
+			disposed = true
 			instance.dispose()
 			setApp(null)
 			onUnmount?.()

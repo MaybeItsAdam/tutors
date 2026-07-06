@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react'
 
-export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'google'
+export type AIProvider = 'openai' | 'anthropic' | 'google'
 
 export interface BYOKConfig {
+	/** Which provider the saved key belongs to (label only — the request
+	 * provider is derived from the selected model). */
 	provider: AIProvider
 	apiKey: string
-	model: string
+	/** Whether to persist the key across browser sessions (localStorage)
+	 * or keep it for this session only (sessionStorage). */
+	remember: boolean
 }
 
 const STORAGE_KEY = 'tutor-whiteboard-byok'
@@ -13,41 +17,42 @@ const STORAGE_KEY = 'tutor-whiteboard-byok'
 export const DEFAULT_CONFIG: BYOKConfig = {
 	provider: 'anthropic',
 	apiKey: '',
-	model: 'claude-sonnet-4-5',
+	remember: true,
+}
+
+function parseStored(stored: string | null, remember: boolean): BYOKConfig | null {
+	if (!stored) return null
+	try {
+		const parsed = JSON.parse(stored)
+		// 'gemini' was a separate provider option in older saved configs
+		const provider = parsed.provider === 'gemini' ? 'google' : parsed.provider
+		return {
+			provider: provider || DEFAULT_CONFIG.provider,
+			apiKey: parsed.apiKey || '',
+			remember,
+		}
+	} catch (e) {
+		console.error('Failed to parse BYOK config from storage', e)
+		return null
+	}
 }
 
 export class BYOKStore {
 	static getConfig(): BYOKConfig {
-		try {
-			const stored = localStorage.getItem(STORAGE_KEY)
-			if (stored) {
-				const parsed = JSON.parse(stored)
-				// Ensure all required fields exist
-				return {
-					provider: parsed.provider || DEFAULT_CONFIG.provider,
-					apiKey: parsed.apiKey || '',
-					model: parsed.model || DEFAULT_CONFIG.model,
-				}
-			}
-		} catch (e) {
-			console.error('Failed to parse BYOK config from local storage', e)
-		}
+		const sessionConfig = parseStored(sessionStorage.getItem(STORAGE_KEY), false)
+		if (sessionConfig) return sessionConfig
+		const localConfig = parseStored(localStorage.getItem(STORAGE_KEY), true)
+		if (localConfig) return localConfig
 		return { ...DEFAULT_CONFIG }
 	}
 
 	static saveConfig(config: BYOKConfig) {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+		const { remember, ...stored } = config
+		const target = remember ? localStorage : sessionStorage
+		const other = remember ? sessionStorage : localStorage
+		target.setItem(STORAGE_KEY, JSON.stringify(stored))
+		other.removeItem(STORAGE_KEY)
 		window.dispatchEvent(new Event('byok-config-changed'))
-	}
-
-	static getHeaders(): Record<string, string> {
-		const config = this.getConfig()
-		if (!config.apiKey) return {}
-		return {
-			'X-API-Key': config.apiKey,
-			'X-Provider': config.provider,
-			'X-Model': config.model,
-		}
 	}
 }
 

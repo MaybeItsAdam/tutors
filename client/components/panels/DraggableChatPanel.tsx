@@ -29,6 +29,10 @@ function shouldStartPanelDrag(target: EventTarget | null) {
 	return target instanceof Element && !target.closest(NO_DRAG_SELECTOR)
 }
 
+function ChatHistoryErrorFallback() {
+	return <div style={{ padding: 12, fontSize: 12 }}>Error loading history</div>
+}
+
 function clampBarToViewport(
 	x: number,
 	y: number,
@@ -167,7 +171,7 @@ function TranscriptPanel({
 				</span>
 			</div>
 			{/* Chat history */}
-			<ErrorBoundary fallback={<div style={{ padding: 12, fontSize: 12 }}>Error loading history</div>}>
+			<ErrorBoundary fallback={ChatHistoryErrorFallback}>
 				<ChatHistory agent={agent} />
 			</ErrorBoundary>
 			<TodoList agent={agent} />

@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import asyncio
 import traceback
@@ -8,6 +9,9 @@ from utils import close_and_parse_json
 
 # Configure litellm (optional custom settings)
 litellm.drop_params = True
+
+MAX_COMPLETION_TOKENS = int(os.getenv("MAX_COMPLETION_TOKENS", "8192"))
+
 
 async def stream_agent_actions(model: str, messages: list, api_key: str) -> AsyncGenerator[str, None]:
     """
@@ -19,9 +23,12 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
     consuming tokens from the upstream LLM provider when the user cancels.
     """
 
-    # Parse provider to determine if we should use assistant message prefill
+    # Anthropic honours assistant message prefill (the model continues from the
+    # partial assistant turn), which locks the response into our JSON shape.
+    # Gemini and OpenAI do not support prefill — the model restarts its own
+    # response — so seeding the buffer would corrupt parsing for them.
     provider = model.split('/')[0].lower() if '/' in model else ""
-    use_prefill = provider in ("anthropic", "gemini")
+    use_prefill = provider == "anthropic"
 
     if use_prefill:
         prefill_content = '{"actions": [{"_type":'
@@ -36,6 +43,7 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
     maybe_incomplete_action = None
     start_time = int(time.time() * 1000)
     response = None
+    finish_reason = None
 
     try:
         response = await litellm.acompletion(
@@ -44,11 +52,14 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
             api_key=api_key,
             stream=True,
             temperature=0,
-            max_tokens=8192
+            max_tokens=MAX_COMPLETION_TOKENS
         )
 
         async for chunk in response:
-            content = chunk.choices[0].delta.content or ""
+            choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            content = choice.delta.content or ""
             buffer += content
 
             partial_object = close_and_parse_json(buffer)
@@ -82,9 +93,15 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
                 yield f"data: {json.dumps(action_copy)}\n\n"
 
         if maybe_incomplete_action:
-            maybe_incomplete_action["complete"] = True
-            maybe_incomplete_action["time"] = int(time.time() * 1000) - start_time
-            yield f"data: {json.dumps(maybe_incomplete_action)}\n\n"
+            if finish_reason == "length":
+                # The response was cut off by the token limit — the trailing
+                # action is not trustworthy, so report an error instead of
+                # committing a half-generated action as complete.
+                yield f"data: {json.dumps({'error': 'Response was cut off by the model token limit. Try a smaller request.'})}\n\n"
+            else:
+                maybe_incomplete_action["complete"] = True
+                maybe_incomplete_action["time"] = int(time.time() * 1000) - start_time
+                yield f"data: {json.dumps(maybe_incomplete_action)}\n\n"
 
     except asyncio.CancelledError:
         # Client disconnected — close the upstream LLM stream to stop burning tokens
@@ -95,6 +112,8 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
                 pass
         return
 
-    except Exception as e:
+    except Exception:
+        # Log the full error server-side, but don't leak provider/request
+        # details (which may echo parts of the request) to the client.
         traceback.print_exc()
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield f"data: {json.dumps({'error': 'The model request failed. Check your API key and model, then try again.'})}\n\n"

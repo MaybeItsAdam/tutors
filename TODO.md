@@ -14,7 +14,7 @@ Your primarily goal now involves **Step 4: AI Communication Layer**, wiring up t
 - [x] **Python FastAPI Backend Core**
   - Implement the chat schema endpoints inside `/backend/main.py`.
   - Provide a `/api/chat` generic endpoint.
-  - *(Pending)* Implement a `/ws/chat` WebSocket endpoint for low-latency streaming interactions.
+  - ~~Implement a `/ws/chat` WebSocket endpoint~~ — dropped: the SSE `/api/chat` endpoint covers streaming, and an unauthenticated WebSocket endpoint can't be protected by CORS (see docs/audit).
 
 - [x] **AI Orchestration (`litellm`)**
   - Create `/backend/llm_service.py` to route the AI requests using Litellm depending on the provider chosen by the user (OpenAI, Anthropic, Gemini).

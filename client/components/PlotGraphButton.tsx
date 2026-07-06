@@ -47,7 +47,6 @@ export function PlotGraphButton() {
 		// 1. Create the graph
 		editor.createShape({
 			id: graphId,
-			// @ts-expect-error — custom shape type
 			type: 'graph',
 			x: spawnPageX,
 			y: spawnPageY,

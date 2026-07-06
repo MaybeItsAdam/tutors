@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useState } from 'react'
-import { useEditor, useValue } from 'tldraw'
+import { TLShapeId, useEditor, useValue } from 'tldraw'
 import { useBottomPanel, usePortalTarget } from './PanelLayoutContext'
 import {
 	dispatchGraph3dControl,
@@ -21,7 +21,7 @@ export function Graph3dGimbalPanel() {
 		return selected?.type === 'graph3d' ? selected.id : null
 	}, [editor])
 	const hasAnySelection = useValue('any-selection', () => editor.getSelectedShapeIds().length > 0, [editor])
-	const [lastGraph3dId, setLastGraph3dId] = useState<string | null>(null)
+	const [lastGraph3dId, setLastGraph3dId] = useState<TLShapeId | null>(null)
 
 	const { style, onDragStart, setVisible } = useBottomPanel({
 		id: 'gimbal',

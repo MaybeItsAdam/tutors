@@ -1,5 +1,6 @@
-fastapi>=0.115.0
-uvicorn[standard]>=0.34.0
-litellm>=1.55.0
-python-dotenv>=1.0.0
-websockets>=14.0
+# Compatible-release pins: allow patch/bugfix updates but block the frequent
+# breaking minor releases (litellm especially). Bump deliberately.
+fastapi~=0.115.0
+uvicorn[standard]~=0.34.0
+litellm~=1.55
+python-dotenv~=1.0
