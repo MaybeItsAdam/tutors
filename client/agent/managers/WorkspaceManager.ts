@@ -2,6 +2,7 @@ import { Atom, atom, structuredClone, TLEditorSnapshot, uniqueId } from 'tldraw'
 import { PersistedAppState } from './AgentAppPersistenceManager'
 import { BaseAgentAppManager } from './BaseAgentAppManager'
 import { formatWorkspaceTime } from '../../utils/workspaceFormat'
+import { kvDelete, kvGet, kvSet } from '../../utils/kvStore'
 
 const STORAGE_KEY = 'tldraw-agent-app:workspaces:v1'
 const AUTO_SNAPSHOT_CHECK_INTERVAL_MS = 30_000
@@ -125,8 +126,8 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		return this.restoreSnapshot(latest.branchId, latest.snapshot.id)
 	}
 
-	loadState() {
-		const persisted = this.loadPersistedState()
+	async loadState() {
+		const persisted = await this.loadPersistedState()
 		if (!persisted) {
 			const workspace = this.createInitialWorkspace('Workspace 1')
 			this.$workspaces.set({ [workspace.id]: workspace })
@@ -744,25 +745,47 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		}, WORKING_STATE_SAVE_INTERVAL_MS)
 	}
 
-	private loadPersistedState(): PersistedWorkspacesState | null {
-		const localStorage = globalThis.localStorage
-		if (!localStorage) return null
-		try {
-			const stored = localStorage.getItem(STORAGE_KEY)
-			if (!stored) return null
-			const parsed = JSON.parse(stored) as PersistedWorkspacesState
-			if (!parsed || parsed.version !== 1 || !parsed.currentWorkspaceId || !parsed.workspaces) {
-				return null
-			}
-			return parsed
-		} catch {
-			return null
-		}
+	private isValidPersistedState(parsed: unknown): parsed is PersistedWorkspacesState {
+		const state = parsed as PersistedWorkspacesState | null
+		return !!state && state.version === 1 && !!state.currentWorkspaceId && !!state.workspaces
 	}
 
+	private async loadPersistedState(): Promise<PersistedWorkspacesState | null> {
+		// Primary store: IndexedDB (structured clone, no ~5MB quota)
+		try {
+			const stored = await kvGet<PersistedWorkspacesState>(STORAGE_KEY)
+			if (this.isValidPersistedState(stored)) return stored
+		} catch (e) {
+			console.error('Failed to load workspaces from IndexedDB', e)
+		}
+
+		// Migration path: state persisted by older builds lives in localStorage
+		try {
+			const legacy = globalThis.localStorage?.getItem(STORAGE_KEY)
+			if (legacy) {
+				const parsed = JSON.parse(legacy)
+				if (this.isValidPersistedState(parsed)) {
+					// Move it to IndexedDB and clear the old copy
+					kvSet(STORAGE_KEY, parsed)
+						.then(() => globalThis.localStorage?.removeItem(STORAGE_KEY))
+						.catch(() => {})
+					return parsed
+				}
+			}
+		} catch {
+			// fall through to a fresh workspace
+		}
+
+		return null
+	}
+
+	/** Chain of pending writes so persists never interleave. */
+	private persistQueue: Promise<void> = Promise.resolve()
+
+	/** Only toast the user about persistence failure once per session. */
+	private hasReportedPersistError = false
+
 	private persistState() {
-		const localStorage = globalThis.localStorage
-		if (!localStorage) return
 		const currentWorkspaceId = this.$currentWorkspaceId.get()
 		if (!currentWorkspaceId) return
 		const state: PersistedWorkspacesState = {
@@ -770,10 +793,21 @@ export class WorkspaceManager extends BaseAgentAppManager {
 			currentWorkspaceId,
 			workspaces: this.$workspaces.get(),
 		}
-		try {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-		} catch {
-			// ignore storage quota failures
-		}
+		this.persistQueue = this.persistQueue
+			.then(() => kvSet(STORAGE_KEY, state))
+			.catch((e) => {
+				console.error('Failed to persist workspaces', e)
+				if (!this.hasReportedPersistError) {
+					this.hasReportedPersistError = true
+					this.app.options.onError(
+						'Failed to save workspace snapshots — recent snapshots may be lost on reload'
+					)
+				}
+			})
+	}
+
+	/** Remove all persisted workspace state (unused in the app, useful in dev). */
+	async clearPersistedState() {
+		await kvDelete(STORAGE_KEY)
 	}
 }

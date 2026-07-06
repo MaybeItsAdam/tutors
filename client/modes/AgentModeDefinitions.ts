@@ -6,7 +6,6 @@ import { AddDetailActionUtil } from '../actions/AddDetailActionUtil'
 import { AlignActionUtil } from '../actions/AlignActionUtil'
 import { BringToFrontActionUtil } from '../actions/BringToFrontActionUtil'
 import { ClearActionUtil } from '../actions/ClearActionUtil'
-import { CountryInfoActionUtil } from '../actions/CountryInfoActionUtil'
 import { CountShapesActionUtil } from '../actions/CountShapesActionUtil'
 import { CreateActionUtil } from '../actions/CreateActionUtil'
 import { DeleteActionUtil } from '../actions/DeleteActionUtil'
@@ -161,13 +160,15 @@ export const AGENT_MODE_DEFINITIONS = [
 			AlignActionUtil.type,
 			DistributeActionUtil.type,
 			StackActionUtil.type,
-			ClearActionUtil.type,
+			// Note: ClearActionUtil ('clear') is deliberately NOT enabled here.
+			// Agent edits bypass the undo stack, so a stray model output could
+			// wipe the whole board unrecoverably. The agent can still delete
+			// shapes individually, and users can clear the canvas themselves.
 
 			// Drawing
 			PenActionUtil.type,
 
-			// External APIs
-			CountryInfoActionUtil.type,
+			// Canvas queries
 			CountShapesActionUtil.type,
 
 			// Internal (required)

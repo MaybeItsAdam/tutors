@@ -4,8 +4,7 @@ import { AIProvider, useBYOKConfig } from '../../utils/BYOKStore'
 const PROVIDER_OPTIONS: Array<{ value: AIProvider; label: string }> = [
 	{ value: 'anthropic', label: 'Anthropic' },
 	{ value: 'openai', label: 'OpenAI' },
-	{ value: 'google', label: 'Google (google)' },
-	{ value: 'gemini', label: 'Google Gemini (gemini)' },
+	{ value: 'google', label: 'Google' },
 ]
 
 export function BYOKSettings() {
@@ -15,11 +14,13 @@ export function BYOKSettings() {
 	// local state for forms
 	const [provider, setProvider] = useState<AIProvider>(config.provider)
 	const [apiKey, setApiKey] = useState(config.apiKey)
+	const [remember, setRemember] = useState(config.remember)
 
 	const resetDraft = useCallback(() => {
 		setProvider(config.provider)
 		setApiKey(config.apiKey)
-	}, [config.apiKey, config.provider])
+		setRemember(config.remember)
+	}, [config.apiKey, config.provider, config.remember])
 
 	useEffect(() => {
 		if (!isOpen) return
@@ -33,7 +34,7 @@ export function BYOKSettings() {
 	}, [resetDraft])
 
 	const handleSave = () => {
-		updateConfig({ ...config, provider, apiKey })
+		updateConfig({ provider, apiKey, remember })
 		setIsOpen(false)
 	}
 
@@ -90,7 +91,9 @@ export function BYOKSettings() {
 					>
 						<h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>BYOK Settings</h2>
 						<p style={{ margin: 0, fontSize: 12, opacity: 0.8 }}>
-							Configure your own API key to bypass the proxy. Keys are stored locally in your browser.
+							The whiteboard talks to AI providers with your own API key. The key is stored
+							unencrypted in this browser and sent only to your local backend — avoid saving
+							it on shared computers.
 						</p>
 
 						<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -121,6 +124,15 @@ export function BYOKSettings() {
 								placeholder="Enter API Key"
 							/>
 						</div>
+
+						<label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+							<input
+								type="checkbox"
+								checked={remember}
+								onChange={(e) => setRemember(e.target.checked)}
+							/>
+							Remember key on this device (uncheck to keep it for this session only)
+						</label>
 
 						<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
 							<button

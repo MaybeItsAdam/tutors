@@ -1,7 +1,7 @@
 import * as pdfjs from 'pdfjs-dist'
 
-// We use Vite's ?worker to load the worker script correctly or ?url for just the path
-import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
+// We use Vite's ?url to get the path to the worker script
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 // Set the worker source
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
@@ -10,19 +10,25 @@ export interface PdfPageData {
 	pageNumber: number
 	width: number
 	height: number
-	dataUrl: string // blob URL pointing to the rendered page image
+	dataUrl: string // data URL of the rendered page image
 }
 
 export class PdfProcessor {
 	/**
-	 * Extracts all pages of a given PDF file into blob URLs.
-	 * Uses blob URLs instead of base64 data URLs to avoid bloating
-	 * memory and localStorage with huge inline strings.
-	 * Pages are rendered in parallel for faster processing.
+	 * Extracts all pages of a given PDF file into data URLs.
+	 * Data URLs (rather than blob: URLs) are required so the images survive
+	 * a page reload — asset records are persisted by tldraw and by workspace
+	 * snapshots, and blob: URLs die with the document that created them.
+	 * JPEG keeps the persisted size manageable. Pages render in parallel.
 	 */
 	static async processFile(file: File): Promise<PdfPageData[]> {
 		const arrayBuffer = await file.arrayBuffer()
-		const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise
+		const pdf = await pdfjs.getDocument({
+			data: arrayBuffer,
+			// Defence in depth against malicious PDFs executing JS via font
+			// matrices (CVE-2024-4367 class of issues) — never allow eval.
+			isEvalSupported: false,
+		}).promise
 		const numPages = pdf.numPages
 
 		const renderPage = async (i: number): Promise<PdfPageData> => {
@@ -41,20 +47,13 @@ export class PdfProcessor {
 
 			await page.render({ canvasContext: context, viewport }).promise
 
-			// Convert to blob URL instead of base64 data URL to save memory
-			const blob = await new Promise<Blob>((resolve, reject) => {
-				canvas.toBlob(
-					(b) => (b ? resolve(b) : reject(new Error('Failed to create blob from canvas'))),
-					'image/png'
-				)
-			})
-			const blobUrl = URL.createObjectURL(blob)
+			const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
 
 			return {
 				pageNumber: i,
 				width: viewport.width,
 				height: viewport.height,
-				dataUrl: blobUrl,
+				dataUrl,
 			}
 		}
 

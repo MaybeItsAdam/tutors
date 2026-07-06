@@ -279,3 +279,36 @@ watermark requirement noted in README), but the copyright line still says
 7. **Soon:** update CLAUDE.md/README to match the real architecture and ports. *(4)*
 8. **Later:** delete or protect `/ws/chat`, pin backend deps, prune starter-kit
    cruft (`countryInfo`, stale copy), decide on `clear`-action safety. *(1.3, 2.2, 3.7)*
+
+---
+
+## 7. Remediation status (2026-07-06)
+
+All findings were addressed in the commit(s) following this report on the
+`claude/codebase-audit-fsbd1b` branch:
+
+| Finding | Resolution |
+| --- | --- |
+| 1.1 pdfjs-dist RCE | Upgraded to pdfjs-dist 4.10.38 **and** `isEvalSupported: false`; `npm audit --omit=dev` now reports **0 vulnerabilities** (was 14, 7 high) |
+| 1.2 keys in localStorage | Settings modal now documents the risk and offers a session-only (sessionStorage) mode; stale "bypass the proxy" copy fixed |
+| 1.3 `/ws/chat` | Deleted (dead code, unprotectable by CORS); TODO.md updated |
+| 1.4 error leak | Stream errors now return a generic message; full traceback stays server-side |
+| 1.5 limits | Message-count/body-size caps + per-IP sliding-window rate limiter (env-tunable) |
+| 2.1 typecheck | All 11 errors fixed; `npm run typecheck` added; GitHub Actions CI added (typecheck + build + backend compile check) |
+| 2.2 unpinned Python deps | Compatible-release (`~=`) pins in requirements.txt |
+| 3.1 PDF blob URLs | Pages rendered to JPEG data URLs — durable across reloads |
+| 3.2 snapshot quota loss | Workspace persistence moved to IndexedDB (`client/utils/kvStore.ts`, no JSON round-trip, serialized write queue), legacy localStorage state migrated, failures surfaced via toast |
+| 3.3 Gemini prefill | Prefill restricted to Anthropic only |
+| 3.4 provider/model mismatch | `X-Provider` derived from the selected model's definition; BYOK provider is now just a key label; duplicate google/gemini options merged; dead `BYOKConfig.model`/`getHeaders` removed |
+| 3.5 truncation | `finish_reason == "length"` now yields an error instead of marking the cut-off action complete; `MAX_COMPLETION_TOKENS` env-tunable |
+| 3.6 cancel ghost shape | Dangling incomplete-action diff reverted in a `finally` when the stream ends |
+| 3.7 hotkey collision | Complex plane moved `c` → `q` |
+| 3.7 stream parsing | Malformed SSE lines skipped instead of fatal; server `error` events still abort |
+| 3.7 `prompt()` swallow | Preparation errors now routed to `onError` toast |
+| 3.7 `clear` safety | Removed from the default mode's action set (util remains registered); rationale documented in `AgentModeDefinitions.ts` |
+| 3.7 zod validation | Completed actions are `safeParse`d against their mode schema before applying; failures are skipped |
+| 3.7 client timeout | Hard 120s cap replaced with a 90s *idle* timeout that resets on every chunk |
+| 4 doc drift | README + CLAUDE.md rewritten to match the real architecture, ports, and paths; `.env.example` updated |
+| 5 dead code / cruft | Removed `countryInfo` action, `getModelName.ts`, `BYOKStore.getHeaders`, unreachable `_TEST_MODELS["google"]`, and unused deps (`ai`, `best-effort-json-parser`, `@tldraw/tlschema`); `act()` no longer aborts the stream on a single failed action; `engines`/`.nvmrc` added |
+| 5 `close_and_parse_json` O(n²) | Left as-is deliberately — acceptable at the 8k-token cap; revisit if the cap grows |
+

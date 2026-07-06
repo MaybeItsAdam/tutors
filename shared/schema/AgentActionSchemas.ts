@@ -99,20 +99,6 @@ export const CountShapesAction = z
 
 export type CountShapesAction = z.infer<typeof CountShapesAction>
 
-// Country Info Action
-export const CountryInfoAction = z
-	.object({
-		_type: z.literal('countryInfo'),
-		code: z.string(),
-	})
-	.meta({
-		title: 'Country info',
-		description:
-			'The AI gets information about a country by providing its country code, eg: "de" for Germany.',
-	})
-
-export type CountryInfoAction = z.infer<typeof CountryInfoAction>
-
 // Create Action
 export const CreateAction = z
 	.object({

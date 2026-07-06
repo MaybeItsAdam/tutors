@@ -76,7 +76,7 @@ async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y:
 				h: page.height,
 				name: buildPdfPageAssetName(file.name, page.pageNumber),
 				isAnimated: false,
-				mimeType: 'image/png',
+				mimeType: 'image/jpeg',
 				src: page.dataUrl,
 			},
 		})
@@ -223,7 +223,7 @@ function getPinnedCoreToolIds(): CoreToolId[] {
 
 const overrides: TLUiOverrides = {
 	tools: (editor, tools) => {
-		const nextTools = {
+		const nextTools: typeof tools = {
 			...tools,
 			'target-area': {
 				id: 'target-area',
@@ -281,8 +281,9 @@ const overrides: TLUiOverrides = {
 			},
 			'complexplane': {
 				id: 'complexplane',
-				label: 'Complex Plane (c)',
-				kbd: 'c',
+				label: 'Complex Plane (q)',
+				// 'c' is taken by the target-area tool
+				kbd: 'q',
 				icon: 'tool-ellipse',
 				onSelect() {
 					editor.setCurrentTool('complexplane')
@@ -564,18 +565,19 @@ function App() {
 
 	const toolbarMenuSelection = useMemo(() => {
 		if (!toolbarToolMenu) return null
-		if (isCoreToolId(toolbarToolMenu.toolId)) {
+		const menuToolId = toolbarToolMenu.toolId
+		if (isCoreToolId(menuToolId)) {
 			return {
-				isPinned: pinnedCoreToolIds.includes(toolbarToolMenu.toolId),
-				canToggle: toolbarToolMenu.toolId !== 'select',
-				onToggle: () => togglePinnedCoreToolFromMenu(toolbarToolMenu.toolId),
+				isPinned: pinnedCoreToolIds.includes(menuToolId),
+				canToggle: menuToolId !== 'select',
+				onToggle: () => togglePinnedCoreToolFromMenu(menuToolId),
 			}
 		}
-		if (isPinnableCustomToolId(toolbarToolMenu.toolId)) {
+		if (isPinnableCustomToolId(menuToolId)) {
 			return {
-				isPinned: pinnedToolIds.includes(toolbarToolMenu.toolId),
+				isPinned: pinnedToolIds.includes(menuToolId),
 				canToggle: true,
-				onToggle: () => togglePinnedToolFromMenu(toolbarToolMenu.toolId),
+				onToggle: () => togglePinnedToolFromMenu(menuToolId),
 			}
 		}
 		return null
