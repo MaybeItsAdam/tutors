@@ -1924,3 +1924,62 @@ button.prompt-tag span {
 .agent-action-type-message {
 	color: var(--tl-color-text-1);
 }
+
+/* ── Usage meter ─────────────────────────────────────────────────────────── */
+
+.usage-meter {
+	padding: 0 8px 4px;
+}
+
+.usage-meter-summary {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	appearance: none;
+	background: none;
+	border: 0;
+	border-radius: 6px;
+	padding: 3px 6px;
+	cursor: pointer;
+	font-size: 10px;
+	color: var(--tl-color-text-2);
+}
+
+.usage-meter-summary:hover {
+	background-color: var(--tl-color-muted-2);
+}
+
+.usage-meter-cost {
+	font-variant-numeric: tabular-nums;
+}
+
+.usage-meter-chevron {
+	margin-left: auto;
+	opacity: 0.7;
+}
+
+.usage-meter-detail {
+	margin: 2px 0 0;
+	padding: 4px 6px;
+	border-radius: 6px;
+	background: var(--tl-color-muted-1);
+	font-size: 10px;
+	color: var(--tl-color-text-2);
+}
+
+.usage-meter-row {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.usage-meter-row dt,
+.usage-meter-row dd {
+	margin: 0;
+}
+
+.usage-meter-row dd {
+	font-variant-numeric: tabular-nums;
+	color: var(--tl-color-text);
+}

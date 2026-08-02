@@ -1,4 +1,4 @@
-import { Atom, atom, structuredClone, TLEditorSnapshot, uniqueId } from 'tldraw'
+import { Atom, atom, react, structuredClone, TLEditorSnapshot, uniqueId } from 'tldraw'
 import { PersistedAppState } from './AgentAppPersistenceManager'
 import { BaseAgentAppManager } from './BaseAgentAppManager'
 import { formatWorkspaceTime } from '../../utils/workspaceFormat'
@@ -62,10 +62,22 @@ export class WorkspaceManager extends BaseAgentAppManager {
 	private workingStateSaveTimer: number | null = null
 	private isApplyingState = false
 
+	/**
+	 * Whether anything worth saving has changed since the last working-state
+	 * save. Starts true so the first tick always establishes a baseline.
+	 *
+	 * A snapshot embeds the whole editor state - including PDF pages, which are
+	 * base64 image assets - and the persisted blob holds every snapshot of
+	 * every branch. Capturing and rewriting all of that on a fixed timer, with
+	 * an idle canvas, was the single most expensive thing this app did.
+	 */
+	private isDirty = true
+
 	constructor(app: BaseAgentAppManager['app']) {
 		super(app)
 		this.$workspaces = atom('workspaces', {})
 		this.$currentWorkspaceId = atom('currentWorkspaceId', null)
+		this.startChangeTracking()
 		this.startTimers()
 	}
 
@@ -714,7 +726,10 @@ export class WorkspaceManager extends BaseAgentAppManager {
 						[current.currentBranchId]: {
 							...currentBranch,
 							updatedAt: now,
-							workingState: structuredClone(state),
+							// `state` is already freshly cloned by captureWorkspaceState
+							// and has no other owner, so hand it over as-is - cloning
+							// again duplicates the entire canvas for nothing.
+							workingState: state,
 						},
 					},
 				},
@@ -734,12 +749,50 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		this.createSnapshot(`Auto ${formatWorkspaceTime(now)}`, { isAuto: true })
 	}
 
+	/**
+	 * Watch everything a workspace snapshot captures, so the save timer can
+	 * skip ticks where nothing actually changed.
+	 */
+	private startChangeTracking() {
+		// Canvas edits.
+		this.disposables.add(
+			this.app.editor.store.listen(
+				() => {
+					this.isDirty = true
+				},
+				{ scope: 'document', source: 'all' }
+			)
+		)
+
+		// Agent state. Reading these inside `react` subscribes to exactly what
+		// `serializeState` persists, so agent-only changes (a chat message, a
+		// todo tick) still mark the workspace dirty even with a still canvas.
+		this.disposables.add(
+			react('workspace working state', () => {
+				for (const agent of this.app.agents.getAgents()) {
+					agent.chat.getHistory()
+					agent.chatOrigin.getOrigin()
+					agent.todos.getTodos()
+					agent.context.getItems()
+					agent.modelName.getModelName()
+					agent.debug.getDebugFlags()
+					agent.usage.getTotals()
+				}
+				this.isDirty = true
+			})
+		)
+	}
+
 	private startTimers() {
 		this.autoSnapshotTimer = window.setInterval(
 			() => this.maybeAutoSnapshot(),
 			AUTO_SNAPSHOT_CHECK_INTERVAL_MS
 		)
 		this.workingStateSaveTimer = window.setInterval(() => {
+			if (!this.isDirty) return
+			// Cleared before capturing, so a change landing mid-save is still
+			// picked up by the next tick rather than being swallowed.
+			this.isDirty = false
 			this.captureCurrentBranchWorkingState()
 			this.persistState()
 		}, WORKING_STATE_SAVE_INTERVAL_MS)

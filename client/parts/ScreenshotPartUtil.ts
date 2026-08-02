@@ -24,8 +24,17 @@ export const ScreenshotPartUtil = registerPromptPartUtil(
 				return { type: 'screenshot', screenshot: '' }
 			}
 
+			// Every major vision model downsamples to roughly this on its way in
+			// (Claude tops out at 1568px on the longest edge), so anything larger
+			// is upload and token cost for detail the model never sees - and this
+			// image is rebuilt on every turn of the agent loop.
+			const MAX_SCREENSHOT_DIMENSION = 1568
+
 			const largestDimension = Math.max(request.bounds.w, request.bounds.h)
-			const scale = largestDimension > 8000 ? 8000 / largestDimension : 1
+			const scale =
+				largestDimension > MAX_SCREENSHOT_DIMENSION
+					? MAX_SCREENSHOT_DIMENSION / largestDimension
+					: 1
 
 			const result = await editor.toImage(shapes, {
 				format: 'jpeg',

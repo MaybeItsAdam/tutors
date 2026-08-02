@@ -42,6 +42,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r backend/requirements.txt
+      - run: pip install -r backend/requirements-dev.txt
       - name: Syntax check
         run: python -m compileall backend
+      - name: Tests
+        run: python -m pytest backend/tests -q

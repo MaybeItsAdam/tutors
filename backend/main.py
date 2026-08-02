@@ -65,9 +65,26 @@ RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 _request_times: dict[str, deque] = defaultdict(deque)
 
 
+def _evict_idle_clients(now: float) -> None:
+    """
+    Drop clients whose window has fully rolled off.
+
+    Without this the map grows one entry per client IP for the lifetime of the
+    process - unnoticeable on localhost, a slow leak anywhere else.
+    """
+    stale = [
+        ip
+        for ip, times in _request_times.items()
+        if not times or now - times[-1] > RATE_LIMIT_WINDOW_SECONDS
+    ]
+    for ip in stale:
+        del _request_times[ip]
+
+
 def _check_rate_limit(request: Request) -> None:
     client_ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
+    _evict_idle_clients(now)
     times = _request_times[client_ip]
     while times and now - times[0] > RATE_LIMIT_WINDOW_SECONDS:
         times.popleft()

@@ -3,6 +3,7 @@ import { useAgent, useCurrentWorkspace } from '../agent/TldrawAgentAppProvider'
 import { ChatHistory } from './chat-history/ChatHistory'
 import { ChatInput } from './ChatInput'
 import { TodoList } from './TodoList'
+import { UsageMeter } from './UsageMeter'
 import { BYOKSettings } from './byok/BYOKSettings'
 
 export function ChatPanel() {
@@ -55,6 +56,7 @@ export function ChatPanel() {
 			<ChatHistory agent={agent} />
 			<div className="chat-input-container">
 				<TodoList agent={agent} />
+				<UsageMeter agent={agent} />
 				<ChatInput handleSubmit={handleSubmit} inputRef={inputRef} />
 			</div>
 		</div>

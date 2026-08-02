@@ -174,6 +174,7 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 			agent.context.getItems()
 			agent.modelName.getModelName()
 			agent.debug.getDebugFlags()
+			agent.usage.getTotals()
 
 			// Save if not currently loading
 			if (!this.isLoadingState) {

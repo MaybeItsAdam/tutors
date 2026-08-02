@@ -1,0 +1,5 @@
+# Test-only dependencies. The suite covers the pure streaming/parsing logic and
+# deliberately imports no litellm, so `pip install -r requirements.txt` is not
+# needed to run it.
+-r requirements.txt
+pytest~=8.3
