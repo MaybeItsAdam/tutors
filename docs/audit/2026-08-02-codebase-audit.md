@@ -274,7 +274,40 @@ while editing). pdfjs is already correctly split out as a worker.
 Items 1, 6 and the 2.4 double-clone are each a few lines and together remove a
 correctness bug and a per-turn cost multiplier — a sensible first commit.
 
-## 6. Verified green
+## 6. Remediation status (2026-08-02)
+
+Everything above was acted on in the same session, except where noted.
+
+| Finding | Status |
+| --- | --- |
+| 1.1 Dropped actions (`if` vs `while`) | **Fixed.** Emit loop extracted to `backend/action_stream.py` and drained with a `while`. Reverting to `if` fails three tests. |
+| 1.2 Stale `ResizeObserver` height | Open — small, still worth doing. |
+| 1.3 Branch pruning orphans children | Open. |
+| 2.1 No turn cap | **Fixed.** `MAX_CONSECUTIVE_CONTINUATIONS = 12`, reset by each user prompt; the agent posts a message saying it paused. |
+| 2.2 Unbounded chat history in prompt | **Fixed.** `trimChatHistory` keeps the last 60 items plus the original user prompt. |
+| 2.3 8000px screenshots | **Fixed.** Clamped to 1568px. |
+| 2.4 Persistence write amplification | **Fixed.** Dirty tracking over the editor store and agent state; clean ticks skip entirely. Redundant second `structuredClone` dropped. Per-branch keys and blob-backed PDF assets (fixes 3 and 4 of that list) not done. |
+| 2.5 Buffer rescanned per chunk | **Fixed.** `IncrementalJsonParser` scans each character once and carries its delimiter stack across chunks. |
+| 2.6 Rate-limiter never evicts | **Fixed.** |
+| 3.1 mathlive XSS advisory | **Fixed.** mathlive 0.110.0, dompurify 3.4.12; `npm audit --omit=dev` reports 0 vulnerabilities. The bump is semver-major and the element is reached via `@ts-expect-error`, so the used API surface was checked against the installed type definitions — **interactive click-through of equation editing has not been done.** |
+| 4.1 No tests, no linter | **Partly fixed.** 56 backend tests over the emit loop and JSON parser, running in CI. Still no frontend tests and no linter. |
+| 4.2 `any` escape hatches | Open. |
+| 4.3 Single 4.98 MB chunk | Open. |
+
+Also added, beyond the audit's scope:
+
+- **`plot` action.** The four maths visualisations were toolbar-only — the AI
+  could not plot a function on a maths tutoring whiteboard. Now it can, with
+  system-prompt guidance to use it instead of hand-drawing axes.
+- **Readable custom shapes.** Every custom shape collapsed to `_type: 'unknown'`
+  when described to the model, so the agent could move an equation but not read
+  it. Unknown shapes now carry a `text` summary.
+- **Usage meter.** Backend reports tokens and litellm-priced cost as a terminal
+  stream event; the chat panel shows a running total.
+- **Export / import.** Canvas to PNG/SVG, workspace to a `.tutors.json` file
+  and back, with id re-identification on import.
+
+## 7. Verified green
 
 - `npx tsc --noEmit` — clean, no errors.
 - `npm run build` — succeeds in ~40s.
