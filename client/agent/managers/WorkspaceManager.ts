@@ -168,6 +168,25 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		return workspace
 	}
 
+	/**
+	 * Add a workspace loaded from an export file and switch to it.
+	 *
+	 * The caller is responsible for having parsed and re-identified the
+	 * workspace (see `client/utils/workspaceExport.ts`) - by the time it gets
+	 * here it must already carry ids that can't collide with existing ones.
+	 */
+	importWorkspace(workspace: Workspace): boolean {
+		const branch = workspace.branches[workspace.currentBranchId]
+		if (!branch) return false
+
+		this.captureCurrentBranchWorkingState()
+		this.$workspaces.update((prev) => ({ ...prev, [workspace.id]: workspace }))
+		this.$currentWorkspaceId.set(workspace.id)
+		this.persistState()
+		this.applyWorkspaceState(branch.workingState)
+		return true
+	}
+
 	switchWorkspace(workspaceId: string): boolean {
 		const workspaces = this.$workspaces.get()
 		const targetWorkspace = workspaces[workspaceId]

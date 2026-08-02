@@ -1983,3 +1983,22 @@ button.prompt-tag span {
 	font-variant-numeric: tabular-nums;
 	color: var(--tl-color-text);
 }
+
+/* ── Workspace export / import ───────────────────────────────────────────── */
+
+.workspace-share {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding-top: 6px;
+	border-top: 1px solid var(--tl-color-muted-1);
+}
+
+.workspace-share .workspace-btn:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.workspace-share-status {
+	padding-left: 64px;
+}
