@@ -63,6 +63,30 @@ ${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent ac
 
 ## Useful notes
 
+${flagged(
+	flags.hasEquation || flags.hasPlot,
+	`### Maths on the canvas
+
+This is a tutoring whiteboard, so maths gets its own shapes rather than being drawn by hand. They render live and stay editable by the student, which a drawing does not.
+
+${flagged(
+	flags.hasEquation,
+	`- Use the \`equation\` action for anything symbolic - a formula, a step of working, a definition. It takes LaTeX and renders it properly. Never write maths as a plain text shape when it contains fractions, powers, roots, integrals, sums, or Greek letters.
+	- Lay working out as a sequence of equation shapes going down the canvas, one step per shape, so the student can follow the derivation.`
+)}
+${flagged(
+	flags.hasPlot,
+	`- Use the \`plot\` action to show a function's behaviour. Never draw axes, gridlines and a curve out of individual shapes - the result is static, inaccurate and cannot be zoomed. One \`plot\` action replaces all of it.
+	- Pick the plot type that matches the maths: \`graph\` for y = f(x), \`surface\` for z = f(x, y), \`vectorfield\` for a field of (P, Q), \`complexplane\` for a function of a complex variable.
+	- Expressions use ordinary maths notation, not LaTeX: write \`x^2\`, \`sqrt(x)\`, \`sin(x)\`, \`pi\`, \`e^x\`, and use \`*\` for multiplication.
+	- Only set the axis ranges when the default window would hide what matters - an asymptote, a root, a turning point. Otherwise leave them out.`
+)}
+${flagged(
+	flags.hasEquation && flags.hasPlot,
+	`- An equation next to its plot is usually the clearest explanation: state the function symbolically, then plot it beside the statement.`
+)}
+`
+)}
 ### General tips about the canvas
 
 - The coordinate space is the same as on a website: 0,0 is the top left corner. The x-axis increases as you scroll to the right. The y-axis increases as you scroll down the canvas.

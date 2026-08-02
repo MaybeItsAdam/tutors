@@ -40,6 +40,36 @@ export const EquationAction = z
 
 export type EquationAction = z.infer<typeof EquationAction>
 
+// Plot Action
+export const PlotAction = z
+	.object({
+		_type: z.literal('plot'),
+		intent: z.string(),
+		plotType: z.enum(['graph', 'surface', 'vectorfield', 'complexplane']),
+		expression: z.string(),
+		x: z.number(),
+		y: z.number(),
+		xMin: z.number().optional(),
+		xMax: z.number().optional(),
+		yMin: z.number().optional(),
+		yMax: z.number().optional(),
+	})
+	.meta({
+		title: 'Plot',
+		description:
+			'The AI plots a mathematical function on the canvas as a live, interactive visualisation. ' +
+			'Use this instead of drawing axes and curves by hand. ' +
+			'The `expression` uses standard math notation (not LaTeX) and its meaning depends on `plotType`: ' +
+			'"graph" is a 2D plot of y as a function of x, e.g. "sin(x)" or "x^2 - 3*x"; ' +
+			'"surface" is a 3D surface of z as a function of x and y, e.g. "sin(sqrt(x^2 + y^2))"; ' +
+			'"vectorfield" is a 2D field written as two comma-separated components P,Q of x and y, e.g. "y, -x"; ' +
+			'"complexplane" is a domain-coloured complex function of z, e.g. "z^2" or "1/(z-1)". ' +
+			'`x` and `y` are where the centre of the plot goes. ' +
+			'The axis ranges are optional - omit them unless the interesting behaviour needs a particular window.',
+	})
+
+export type PlotAction = z.infer<typeof PlotAction>
+
 // Align Action
 export const AlignAction = z
 	.object({
