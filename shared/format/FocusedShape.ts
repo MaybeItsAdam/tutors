@@ -128,13 +128,14 @@ const FocusedUnknownShape = z
 		note: z.string(),
 		shapeId: SimpleShapeIdSchema,
 		subType: z.string(),
+		text: z.string().optional(),
 		x: z.number(),
 		y: z.number(),
 	})
 	.meta({
 		title: 'Unknown Shape',
 		description:
-			"A special shape that is not represented by one of the canvas's core shape types. The AI cannot create these shapes, but it *can* interact with them. eg: The AI can move these shapes. The `subType` property contains the internal name of the shape's type.",
+			"A special shape that is not represented by one of the canvas's core shape types. The AI cannot create these shapes with the `create` action, but it *can* interact with them. eg: The AI can move these shapes. The `subType` property contains the internal name of the shape's type. For the math shapes (`equation`, `graph`, `graph3d`, `vectorfield`, `complexplane`, `pdf`) the `text` property summarises what the shape is showing, so the AI can read what is already on the canvas. Note that `equation` shapes are created with the `equation` action and the plot shapes with the `plot` action.",
 	})
 
 export type FocusedUnknownShape = z.infer<typeof FocusedUnknownShape>

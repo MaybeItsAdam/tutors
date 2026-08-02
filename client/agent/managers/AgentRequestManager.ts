@@ -32,6 +32,17 @@ export class AgentRequestManager extends BaseAgentManager {
 	private cancelFn: (() => void) | null = null
 
 	/**
+	 * How many times in a row the agent has scheduled more work for itself
+	 * without the user asking for anything new. Reset by each user prompt.
+	 *
+	 * This is what bounds the agentic loop: the agent keeps going while todos
+	 * are outstanding, and only the model decides when a todo is done, so a
+	 * model that never marks them off would otherwise re-prompt forever - on
+	 * the user's own API key.
+	 */
+	private continuationCount = 0
+
+	/**
 	 * Creates a new request manager for the given agent.
 	 * Initializes all request-related atoms with default values.
 	 */
@@ -51,6 +62,32 @@ export class AgentRequestManager extends BaseAgentManager {
 		this.$scheduledRequest.set(null)
 		this.$isPrompting.set(false)
 		this.cancelFn = null
+		this.continuationCount = 0
+	}
+
+	/**
+	 * How many consecutive self-directed continuations the agent has run.
+	 * @returns The current count.
+	 */
+	getContinuationCount() {
+		return this.continuationCount
+	}
+
+	/**
+	 * Record that the agent is about to continue working by itself.
+	 * @returns The new count.
+	 */
+	incrementContinuationCount() {
+		this.continuationCount += 1
+		return this.continuationCount
+	}
+
+	/**
+	 * Clear the continuation count. Called whenever the user prompts, since
+	 * fresh user input starts a new stretch of work.
+	 */
+	resetContinuationCount() {
+		this.continuationCount = 0
 	}
 
 	/**

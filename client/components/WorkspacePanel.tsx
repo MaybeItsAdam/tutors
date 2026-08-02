@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTldrawAgentApp } from '../agent/TldrawAgentAppProvider'
 import {
 	Workspace,
@@ -6,6 +6,12 @@ import {
 	WorkspaceSnapshot,
 } from '../agent/managers/WorkspaceManager'
 import { formatWorkspaceTime } from '../utils/workspaceFormat'
+import {
+	downloadCanvasImage,
+	downloadWorkspaceFile,
+	parseWorkspaceFile,
+	reidentifyWorkspace,
+} from '../utils/workspaceExport'
 
 export function WorkspacePanel({ currentWorkspace }: { currentWorkspace: Workspace | null }) {
 	const app = useTldrawAgentApp()
@@ -152,6 +158,8 @@ export function WorkspacePanel({ currentWorkspace }: { currentWorkspace: Workspa
 				</button>
 			</div>
 
+			<ShareRow workspace={currentWorkspace} />
+
 			<div className="workspace-history">
 				<div className="workspace-meta">Current branch snapshots: {snapshots.length}</div>
 				{branches.map((branch) => (
@@ -166,6 +174,104 @@ export function WorkspacePanel({ currentWorkspace }: { currentWorkspace: Workspa
 					/>
 				))}
 			</div>
+		</div>
+	)
+}
+
+/**
+ * Getting work out of the app and back into it: the canvas as an image to hand
+ * in or revise from, and the whole workspace - canvas, branches, snapshots and
+ * chat - as a file to back up, move between machines, or share.
+ */
+function ShareRow({ workspace }: { workspace: Workspace }) {
+	const app = useTldrawAgentApp()
+	const fileInputRef = useRef<HTMLInputElement>(null)
+	const [status, setStatus] = useState<string | null>(null)
+	const [busy, setBusy] = useState(false)
+
+	const exportImage = useCallback(
+		async (format: 'png' | 'svg') => {
+			setBusy(true)
+			setStatus(null)
+			try {
+				const exported = await downloadCanvasImage(app.editor, format, workspace.name)
+				if (!exported) setStatus('Nothing on the canvas to export yet.')
+			} catch (e) {
+				console.error('Failed to export canvas image', e)
+				setStatus("Couldn't export the canvas.")
+			} finally {
+				setBusy(false)
+			}
+		},
+		[app, workspace.name]
+	)
+
+	const exportWorkspace = useCallback(() => {
+		setStatus(null)
+		try {
+			downloadWorkspaceFile(workspace)
+		} catch (e) {
+			console.error('Failed to export workspace', e)
+			setStatus("Couldn't export this workspace.")
+		}
+	}, [workspace])
+
+	const importWorkspace = useCallback(
+		async (file: File) => {
+			setBusy(true)
+			setStatus(null)
+			try {
+				const imported = parseWorkspaceFile(await file.text())
+				// Fresh ids, so importing a file exported from this same app
+				// adds a copy instead of overwriting the original.
+				const ok = app.workspaces.importWorkspace(reidentifyWorkspace(imported))
+				setStatus(ok ? `Imported "${imported.name}".` : "Couldn't import that workspace.")
+			} catch (e) {
+				setStatus(e instanceof Error ? e.message : "Couldn't read that file.")
+			} finally {
+				setBusy(false)
+			}
+		},
+		[app]
+	)
+
+	return (
+		<div className="workspace-share">
+			<div className="workspace-row">
+				<label className="workspace-label">Export</label>
+				<button className="workspace-btn" disabled={busy} onClick={() => exportImage('png')}>
+					PNG
+				</button>
+				<button className="workspace-btn" disabled={busy} onClick={() => exportImage('svg')}>
+					SVG
+				</button>
+				<button className="workspace-btn" disabled={busy} onClick={exportWorkspace}>
+					Workspace file
+				</button>
+			</div>
+			<div className="workspace-row">
+				<label className="workspace-label">Import</label>
+				<button
+					className="workspace-btn"
+					disabled={busy}
+					onClick={() => fileInputRef.current?.click()}
+				>
+					Open workspace file
+				</button>
+				<input
+					ref={fileInputRef}
+					type="file"
+					accept=".json,application/json"
+					style={{ display: 'none' }}
+					onChange={(e) => {
+						const file = e.currentTarget.files?.[0]
+						// Reset first, so picking the same file twice still fires.
+						e.currentTarget.value = ''
+						if (file) importWorkspace(file)
+					}}
+				/>
+			</div>
+			{status && <div className="workspace-meta workspace-share-status">{status}</div>}
 		</div>
 	)
 }

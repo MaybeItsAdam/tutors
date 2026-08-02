@@ -247,8 +247,54 @@ function convertUnknownShapeToFocused(editor: Editor, shape: TLShape): FocusedUn
 		note: (shape.meta.note as string) ?? '',
 		shapeId: convertTldrawIdToSimpleId(shape.id),
 		subType: shape.type,
+		text: describeCustomShape(shape),
 		x: bounds.x,
 		y: bounds.y,
+	}
+}
+
+/**
+ * Summarise what one of the app's custom shapes is actually showing.
+ *
+ * Without this the agent sees only that "some shape of subType `graph` sits
+ * here" - it can move an equation around but can't read it, which is a strange
+ * blind spot on a maths whiteboard. Returns undefined for shapes that have
+ * nothing worth summarising.
+ */
+function describeCustomShape(shape: TLShape): string | undefined {
+	const props = shape.props as Record<string, unknown>
+	const text = (key: string) => (typeof props[key] === 'string' ? (props[key] as string) : null)
+
+	switch (shape.type) {
+		case 'equation': {
+			const latex = text('latex')
+			return latex ? `LaTeX: ${latex}` : undefined
+		}
+		case 'graph': {
+			const fn = text('functionStr')
+			return fn ? `2D plot of y = ${fn}` : undefined
+		}
+		case 'graph3d': {
+			const expression = text('expression')
+			return expression ? `3D surface plot of z = ${expression}` : undefined
+		}
+		case 'vectorfield': {
+			const expression = text('expression')
+			return expression ? `Vector field (P, Q) = (${expression})` : undefined
+		}
+		case 'complexplane': {
+			const expression = text('expression')
+			return expression ? `Complex plane plot of f(z) = ${expression}` : undefined
+		}
+		case 'pdf': {
+			const assetIds = props.assetIds
+			const pages = Array.isArray(assetIds) ? assetIds.length : 0
+			if (!pages) return undefined
+			const currentPage = typeof props.currentPage === 'number' ? props.currentPage : 0
+			return `PDF document, ${pages} page${pages === 1 ? '' : 's'}, showing page ${currentPage + 1}`
+		}
+		default:
+			return undefined
 	}
 }
 

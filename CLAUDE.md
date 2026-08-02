@@ -41,9 +41,22 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
+**Backend tests** (CI runs these on every PR — keep them green):
+```bash
+pip install -r backend/requirements-dev.txt
+python -m pytest backend/tests -q
+```
+The suite covers `backend/utils.py` (incremental JSON parsing of a streaming
+response) and `backend/action_stream.py` (turning that stream into agent
+actions). Both are pure and import no litellm, so they run fast and offline.
+
 ## Important System Prompts / Architecture Notes
 - The AI is NOT a chatbox. The chat UI merely initiates interactions; the AI outputs structured JSON shapes directly to the canvas spatial environment (e.g., drawing `EquationShape` instances).
 - The agent loop relies on `shared/schema/AgentActionSchemas.ts` for strictly typing what the models can and cannot output to the Tldraw canvas. Completed actions are validated against these schemas at stream time in `TldrawAgent`.
-- All actions are processed via `client/actions/`. If you define a new shape, define its `ActionUtil` there to handle exactly how the AI creates/modifies it upon generating an intent.
-- The system prompt is assembled in `client/prompt/` from modular sections plus the JSON schema for the current mode's actions.
-- Workspace/branch/snapshot state persists to IndexedDB (`client/utils/kvStore.ts`); the live canvas is separately persisted by tldraw's own `persistenceKey` store.
+- All actions are processed via `client/actions/`. If you define a new shape, define its `ActionUtil` there to handle exactly how the AI creates/modifies it upon generating an intent. An action only reaches the model once it is (a) exported from `AgentActionSchemas.ts`, (b) registered via `registerActionUtil`, and (c) listed in the mode's `actions` array in `AgentModeDefinitions.ts`.
+- The AI creates maths shapes through dedicated actions, not `create`: `equation` for LaTeX, and `plot` for all four visualisations (`graph`, `surface`, `vectorfield`, `complexplane`). Custom shapes are described back to the model as `unknown` shapes carrying a `text` summary, which is how the agent reads maths already on the canvas.
+- The system prompt is assembled in `client/prompt/` from modular sections plus the JSON schema for the current mode's actions. Sections are gated on flags derived from the enabled actions/parts (`getSystemPromptFlags.ts`), so guidance for an action must be flagged on that action.
+- The agentic loop is bounded: the agent may schedule at most `MAX_CONSECUTIVE_CONTINUATIONS` (12) self-directed follow-ups before it has to stop and hand back to the user. The counter resets on each user prompt. Without this the todo-driven loop has no termination condition, and it bills the user's own key.
+- Workspace/branch/snapshot state persists to IndexedDB (`client/utils/kvStore.ts`); the live canvas is separately persisted by tldraw's own `persistenceKey` store. Working state saves on a timer but only when something actually changed — snapshots embed the whole canvas, PDF pages included, so unconditional saving was very expensive.
+- Workspaces can be exported to and imported from `.tutors.json` files (`client/utils/workspaceExport.ts`). Imports must be re-identified before being handed to `WorkspaceManager.importWorkspace`, or they collide with existing ids.
+- The backend reports token usage and estimated cost as a terminal `usage` event on the action stream; `AgentUsageManager` accumulates it and `UsageMeter` displays it.

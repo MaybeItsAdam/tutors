@@ -15,6 +15,10 @@ export function getSystemPromptFlags(actions: AgentAction['_type'][], parts: Pro
 		hasTodoList: actions.includes('update-todo-list') && parts.includes('todoList'),
 		hasAddDetail: actions.includes('add-detail'),
 
+		// Maths
+		hasEquation: actions.includes('equation'),
+		hasPlot: actions.includes('plot'),
+
 		// Individual shapes
 		hasCreate: actions.includes('create'),
 		hasDelete: actions.includes('delete'),

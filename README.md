@@ -49,11 +49,31 @@ ALLOWED_ORIGINS=http://localhost:7072,http://127.0.0.1:7072
 
 The default agent configuration can:
 - Create, update and delete shapes (including LaTeX equations)
+- Plot functions as live, interactive visualisations — 2D graphs, 3D surfaces, vector fields and complex-plane plots
+- Read the maths already on the canvas, including equations and plots made by the user
 - Draw freehand pen strokes
 - Manipulate shapes (rotate, resize, align, distribute, stack)
 - Write its thinking and send messages
 - Maintain a todo list
 - Move its viewport and count shapes
+
+The agent works in multiple turns, scheduling follow-up work for itself while it
+still has todos outstanding. It stops after 12 consecutive self-directed turns
+and hands back to you, so a model that never marks its work done can't keep
+spending on your key.
+
+### Saving and sharing work
+
+The workspace panel exports the canvas as a PNG or SVG, and the whole workspace —
+canvas, branches, snapshots and the agent conversation — as a `.tutors.json`
+file that can be imported again on another machine.
+
+### Usage and cost
+
+Every model request reports its token usage back, and the chat panel shows a
+running total for the conversation with an estimated cost. Costs are priced by
+litellm's model catalog; a model it doesn't know still reports tokens, and the
+total is marked `~` to show it understates spend.
 
 To customize the agent's behavior, edit `client/modes/AgentModeDefinitions.ts`. To change the system prompt, modify `client/prompt/sections/`. To add or change what the agent can output, update the schemas in `shared/schema/AgentActionSchemas.ts` and the matching `ActionUtil` in `client/actions/`. To add new backend features, update `backend/main.py`.
 

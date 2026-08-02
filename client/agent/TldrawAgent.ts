@@ -27,7 +27,19 @@ import { AgentModeManager } from './managers/AgentModeManager'
 import { AgentModelNameManager } from './managers/AgentModelNameManager'
 import { AgentRequestManager } from './managers/AgentRequestManager'
 import { AgentTodoManager } from './managers/AgentTodoManager'
+import { AgentUsageManager } from './managers/AgentUsageManager'
 import { AgentUserActionTracker } from './managers/AgentUserActionTracker'
+import { AgentUsageTotals, isAgentUsageEvent } from '../../shared/types/AgentUsage'
+
+/**
+ * How many times in a row the agent may schedule more work for itself before
+ * it has to stop and hand back to the user.
+ *
+ * Generous enough that ordinary multi-step work (plan, draw, review, tidy)
+ * finishes well inside it, but low enough that a model which never marks its
+ * todos done can't bill the user indefinitely.
+ */
+export const MAX_CONSECUTIVE_CONTINUATIONS = 12
 
 /**
  * The persisted state of an agent.
@@ -40,6 +52,7 @@ export interface PersistedAgentState {
 	contextItems?: ContextItem[]
 	modelName?: AgentModelName
 	debugFlags?: AgentDebugFlags
+	usageTotals?: AgentUsageTotals
 }
 
 export interface TldrawAgentOptions {
@@ -104,6 +117,9 @@ export class TldrawAgent {
 	/** The todo manager associated with this agent. */
 	todos: AgentTodoManager
 
+	/** The token usage / cost tracker associated with this agent. */
+	usage: AgentUsageManager
+
 	/** The user action tracker associated with this agent. */
 	userAction: AgentUserActionTracker
 
@@ -145,6 +161,7 @@ export class TldrawAgent {
 		this.modelName = new AgentModelNameManager(this)
 		this.requests = new AgentRequestManager(this)
 		this.todos = new AgentTodoManager(this)
+		this.usage = new AgentUsageManager(this)
 		this.userAction = new AgentUserActionTracker(this)
 
 		// Note: Agent registration is handled by AgentAppAgentsManager.createAgent()
@@ -170,6 +187,7 @@ export class TldrawAgent {
 			contextItems: this.context.getItems(),
 			modelName: this.modelName.getModelName(),
 			debugFlags: this.debug.getDebugFlags(),
+			usageTotals: this.usage.getTotals(),
 		}
 	}
 
@@ -198,6 +216,9 @@ export class TldrawAgent {
 		if (state.debugFlags) {
 			this.debug.setDebugFlags(state.debugFlags)
 		}
+		if (state.usageTotals) {
+			this.usage.setTotals(state.usageTotals)
+		}
 	}
 
 	/**
@@ -218,6 +239,7 @@ export class TldrawAgent {
 		this.modelName.dispose()
 		this.requests.dispose()
 		this.todos.dispose()
+		this.usage.dispose()
 
 		// Note: Agent removal from registry is handled by AgentAppAgentsManager.deleteAgent()
 	}
@@ -317,6 +339,13 @@ export class TldrawAgent {
 		this.requests.setIsPrompting(true)
 
 		const request = this.requests.getFullRequestFromInput(input)
+
+		// A new instruction from the user starts a fresh stretch of work, so the
+		// agent gets its full continuation budget back.
+		if (request.source === 'user') {
+			this.requests.resetContinuationCount()
+		}
+
 		const startingNode = this.mode.getCurrentModeNode()
 		startingNode.onPromptStart?.(this, request)
 
@@ -357,7 +386,15 @@ export class TldrawAgent {
 			return
 		}
 
-		// If there *is* a scheduled request...
+		// If there *is* a scheduled request, first check the agent still has
+		// budget to keep going by itself. Without this the loop is unbounded:
+		// `working.onPromptEnd` reschedules while any todo is outstanding, and
+		// only the model marks todos done.
+		if (this.requests.incrementContinuationCount() > MAX_CONSECUTIVE_CONTINUATIONS) {
+			this.stopRunawayLoop()
+			return
+		}
+
 		// Add the scheduled request to chat history
 		const resolvedData = await Promise.all(scheduledRequest.data)
 		this.chat.push({
@@ -368,6 +405,44 @@ export class TldrawAgent {
 		// Handle the scheduled request and clear it
 		this.requests.clearScheduledRequest()
 		await this.prompt(scheduledRequest, { nested: true })
+	}
+
+	/**
+	 * Stop the agent after it has used up its continuation budget.
+	 *
+	 * Told plainly in the chat rather than silently: from the user's side the
+	 * agent just stopped mid-task, and they need to know it hit a limit (and
+	 * can be told to carry on) rather than that it finished or crashed.
+	 */
+	private stopRunawayLoop() {
+		this.requests.clearScheduledRequest()
+
+		const outstanding = this.todos.getTodos().filter((todo) => todo.status !== 'done')
+		const summary =
+			outstanding.length > 0
+				? ` ${outstanding.length} todo item${outstanding.length === 1 ? '' : 's'} still outstanding.`
+				: ''
+
+		this.chat.push({
+			type: 'action',
+			action: {
+				_type: 'message',
+				complete: true,
+				time: 0,
+				text:
+					`I've worked on this for ${MAX_CONSECUTIVE_CONTINUATIONS} rounds without stopping, so I've paused to check in.${summary}` +
+					` Tell me to keep going if you'd like me to continue.`,
+			},
+			diff: { added: {}, updated: {}, removed: {} },
+			acceptance: 'accepted',
+		})
+
+		if (this.mode.getCurrentModeType() !== 'idling') {
+			this.mode.setMode('idling')
+		}
+
+		this.requests.setIsPrompting(false)
+		this.requests.setCancelFn(null)
 	}
 
 	/**
@@ -550,6 +625,7 @@ export class TldrawAgent {
 		this.mode.reset()
 		this.requests.reset()
 		this.todos.reset()
+		this.usage.reset()
 		this.userAction.reset()
 	}
 
@@ -809,6 +885,13 @@ export class TldrawAgent {
 						// If the response contains an error, throw it
 						if (data && typeof data === 'object' && 'error' in data) {
 							throw new Error(String(data.error))
+						}
+
+						// The stream ends with a usage summary rather than an action.
+						// Record it and keep reading - it isn't something to apply.
+						if (isAgentUsageEvent(data)) {
+							this.usage.record(data.usage)
+							continue
 						}
 
 						yield data as Streaming<AgentAction>

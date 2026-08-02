@@ -16,6 +16,7 @@ import { MessageActionUtil } from '../actions/MessageActionUtil'
 import { MoveActionUtil } from '../actions/MoveActionUtil'
 import { PenActionUtil } from '../actions/PenActionUtil'
 import { PlaceActionUtil } from '../actions/PlaceActionUtil'
+import { PlotActionUtil } from '../actions/PlotActionUtil'
 import { ResizeActionUtil } from '../actions/ResizeActionUtil'
 import { ReviewActionUtil } from '../actions/ReviewActionUtil'
 import { RotateActionUtil } from '../actions/RotateActionUtil'
@@ -146,6 +147,7 @@ export const AGENT_MODE_DEFINITIONS = [
 			// Individual shapes
 			CreateActionUtil.type,
 			EquationActionUtil.type,
+			PlotActionUtil.type,
 			DeleteActionUtil.type,
 			UpdateActionUtil.type,
 			LabelActionUtil.type,
