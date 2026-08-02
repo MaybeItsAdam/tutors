@@ -260,7 +260,12 @@ function MathLiveEditor({ shape, editor }: { shape: IEquationShape; editor: any 
 		// ── Auto-resize: watch the field's rendered height ──
 		const ro = new ResizeObserver(() => {
 			const naturalH = Math.max(60, mf.offsetHeight)
-			if (Math.abs(naturalH - shape.props.h) > 4) {
+			// Read the height from the editor rather than the captured `shape`.
+			// This effect deliberately doesn't re-run on prop changes (see the
+			// dependency list below), so the captured height goes stale after
+			// the first resize and the threshold check stops filtering anything.
+			const currentH = editor.getShape(shape.id)?.props.h ?? shape.props.h
+			if (Math.abs(naturalH - currentH) > 4) {
 				editor.updateShape({
 					id: shape.id,
 					type: 'equation',

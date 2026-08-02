@@ -577,8 +577,25 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		this.$workspaces.update((prev) => {
 			const current = prev[workspace.id]
 			if (!current) return prev
+			const removed = current.branches[branchId]
+			if (!removed) return prev
+
 			const nextBranches = { ...current.branches }
 			delete nextBranches[branchId]
+
+			// Re-parent the pruned branch's children onto its own parent, so the
+			// timeline doesn't end up drawing lineage links to a branch that no
+			// longer exists.
+			for (const branch of Object.values(nextBranches)) {
+				if (branch.parentBranchId !== branchId) continue
+				nextBranches[branch.id] = {
+					...branch,
+					parentBranchId: removed.parentBranchId,
+					// The snapshot it forked from went with the deleted branch.
+					forkedFromSnapshotId: null,
+				}
+			}
+
 			return {
 				...prev,
 				[workspace.id]: {

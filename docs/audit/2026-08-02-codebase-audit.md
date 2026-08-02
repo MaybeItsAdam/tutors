@@ -281,8 +281,8 @@ Everything above was acted on in the same session, except where noted.
 | Finding | Status |
 | --- | --- |
 | 1.1 Dropped actions (`if` vs `while`) | **Fixed.** Emit loop extracted to `backend/action_stream.py` and drained with a `while`. Reverting to `if` fails three tests. |
-| 1.2 Stale `ResizeObserver` height | Open — small, still worth doing. |
-| 1.3 Branch pruning orphans children | Open. |
+| 1.2 Stale `ResizeObserver` height | **Fixed.** Reads the current height off the editor instead of the captured prop. |
+| 1.3 Branch pruning orphans children | **Fixed.** Children are re-parented onto the pruned branch's parent. |
 | 2.1 No turn cap | **Fixed.** `MAX_CONSECUTIVE_CONTINUATIONS = 12`, reset by each user prompt; the agent posts a message saying it paused. |
 | 2.2 Unbounded chat history in prompt | **Fixed.** `trimChatHistory` keeps the last 60 items plus the original user prompt. |
 | 2.3 8000px screenshots | **Fixed.** Clamped to 1568px. |
@@ -306,6 +306,10 @@ Also added, beyond the audit's scope:
   stream event; the chat panel shows a running total.
 - **Export / import.** Canvas to PNG/SVG, workspace to a `.tutors.json` file
   and back, with id re-identification on import.
+
+Remaining open: the `any` escape hatches (4.2), the single 4.98 MB bundle
+chunk (4.3), frontend tests and a linter (4.1), and the deeper half of the
+persistence work — per-branch storage keys and blob-backed PDF assets (2.4).
 
 ## 7. Verified green
 
