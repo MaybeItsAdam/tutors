@@ -29,6 +29,11 @@ import { UnknownActionUtil } from '../actions/UnknownActionUtil'
 import { UpdateActionUtil } from '../actions/UpdateActionUtil'
 import { UpsertTodoListItemActionUtil } from '../actions/UpsertTodoListItemActionUtil'
 
+// ClearActionUtil registers itself via its import above but is deliberately
+// not listed in any mode's actions (see the note in the working mode). The
+// reference below keeps the import (and so the registration) alive.
+void ClearActionUtil
+
 // Import prompt part utils to ensure they register themselves
 import { AgentViewportBoundsPartUtil } from '../parts/AgentViewportBoundsPartUtil'
 import { BlurryShapesPartUtil } from '../parts/BlurryShapesPartUtil'

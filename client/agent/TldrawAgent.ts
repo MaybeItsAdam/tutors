@@ -3,7 +3,7 @@ import { convertTldrawShapeToFocusedShape } from '../../shared/format/convertTld
 import { AgentModelName, AGENT_MODEL_DEFINITIONS } from '../../shared/models'
 import { AgentAction, getActionSchema } from '../../shared/types/AgentAction'
 import { AgentInput } from '../../shared/types/AgentInput'
-import { AgentPrompt, BaseAgentPrompt } from '../../shared/types/AgentPrompt'
+import { AgentPrompt } from '../../shared/types/AgentPrompt'
 import { AgentRequest } from '../../shared/types/AgentRequest'
 import { ChatHistoryItem, ChatHistoryPromptItem } from '../../shared/types/ChatHistoryItem'
 import { ContextItem } from '../../shared/types/ContextItem'
@@ -666,8 +666,6 @@ export class TldrawAgent {
 		}
 
 		const availableActions: readonly AgentAction['_type'][] = modeDefinition.actions
-
-		const modeType = this.mode.getCurrentModeType()
 
 		const requestPromise = (async () => {
 			const prompt = await this.preparePrompt(request, helpers)

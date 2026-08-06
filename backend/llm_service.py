@@ -1,9 +1,11 @@
+import asyncio
 import json
 import os
-import asyncio
 import traceback
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+
 import litellm
+
 from action_stream import ActionStreamEmitter
 
 # Configure litellm (optional custom settings)

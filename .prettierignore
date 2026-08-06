@@ -1,0 +1,6 @@
+dist/
+.tsbuild/
+node_modules/
+backend/.venv/
+package-lock.json
+docs/branch-audit/

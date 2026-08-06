@@ -1,6 +1,3 @@
-import { useState } from 'react'
-import { useEditor } from 'tldraw'
-
 interface MathCheatSheetProps {
 	onClose: () => void
 }

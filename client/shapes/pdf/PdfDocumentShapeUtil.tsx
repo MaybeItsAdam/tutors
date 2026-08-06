@@ -28,12 +28,6 @@ import {
 	PDF_POPUP_Z_INDEX,
 	PDF_SHAPE_DEFAULT_H,
 	PDF_SHAPE_DEFAULT_W,
-	PDF_THUMBNAIL_H,
-	PDF_THUMBNAIL_CONTAINER_H_PADDING,
-	PDF_THUMBNAIL_CONTAINER_MIN_H,
-	PDF_THUMBNAIL_CONTAINER_MIN_W,
-	PDF_THUMBNAIL_CONTAINER_W_PADDING,
-	PDF_THUMBNAIL_W,
 } from './PdfConstants'
 
 type PdfShapeMeta = {
@@ -62,6 +56,11 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		}
 	}
 
+	/* eslint-disable react-hooks/rules-of-hooks --
+	 * tldraw calls this class method as a React render function, so hooks are
+	 * legitimate here but the lint can't know that. The audit's shape-perf PR
+	 * extracts an inner function component (which also fixes the
+	 * hooks-after-early-return bug); remove this disable then. */
 	override component(shape: IPdfDocumentShape) {
 		const editor = useEditor()
 		const { assetIds, currentPage } = shape.props
@@ -69,14 +68,6 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		const isOpen = Boolean(shapeMeta.pdfPopupOpen)
 		const maxPageIndex = assetIds.length - 1
 		const safeCurrentPage = maxPageIndex < 0 ? 0 : Math.min(Math.max(currentPage, 0), maxPageIndex)
-		const thumbnailContainerW = Math.max(
-			PDF_THUMBNAIL_CONTAINER_MIN_W,
-			shape.props.w - PDF_THUMBNAIL_CONTAINER_W_PADDING
-		)
-		const thumbnailContainerH = Math.max(
-			PDF_THUMBNAIL_CONTAINER_MIN_H,
-			shape.props.h - PDF_THUMBNAIL_CONTAINER_H_PADDING
-		)
 		const [popupRect, setPopupRect] = useState({
 			left: PDF_POPUP_DEFAULT_LEFT,
 			top: PDF_POPUP_DEFAULT_TOP,

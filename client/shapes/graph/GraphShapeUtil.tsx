@@ -1,12 +1,11 @@
 import { evaluate } from 'mathjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { HTMLContainer, Rectangle2d, ShapeUtil, useEditor, useValue } from 'tldraw'
+import { HTMLContainer, Rectangle2d, ShapeUtil, useValue } from 'tldraw'
 import { IEquationShape } from '../equation/EquationShape'
 import { graphShapeProps, IGraphShape } from './GraphShape'
 import { latexToMathjsLines } from '../../utils/latexToMathjs'
 import {
 	matrixFromLatex,
-	apply2,
 	eigen2,
 	eigenvec2,
 	det2,
@@ -144,7 +143,6 @@ function findIntersections(
 			let lo = xa
 			let hi = xb
 			let dLo = dA
-			let dHi = dB
 			for (let iter = 0; iter < 14; iter++) {
 				const mid = lo + (hi - lo) * 0.5
 				let dMid: number
@@ -161,7 +159,6 @@ function findIntersections(
 				if (absMid < 1e-10) return { x: mid, score: absMid }
 				if (dLo * dMid <= 0) {
 					hi = mid
-					dHi = dMid
 				} else {
 					lo = mid
 					dLo = dMid

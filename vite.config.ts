@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react-swc'
 import { fileURLToPath } from 'url'
 import { defineConfig } from 'vite'
@@ -12,6 +13,10 @@ export default defineConfig(() => {
 		],
 		server: {
 			port: 7072,
+		},
+		test: {
+			environment: 'node',
+			include: ['client/**/*.test.{ts,tsx}', 'shared/**/*.test.{ts,tsx}'],
 		},
 	}
 })
