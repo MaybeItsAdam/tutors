@@ -298,15 +298,37 @@ export class TldrawAgent {
 
 		const availablePromptPartTypes = modeDefinition.parts
 
+		// One clone shared by every part util instead of one per util (~18x),
+		// with request.data's promises resolved first - structuredClone throws
+		// DataCloneError on a pending Promise. Frozen (shallow) so a part util
+		// that mutates the request fails loudly instead of corrupting its
+		// siblings' view of it.
+		const resolvedData = await Promise.all(request.data)
+		const preparedRequest = Object.freeze(
+			structuredClone({ ...request, data: resolvedData })
+		) as AgentRequest
+
 		for (const promptPartType of availablePromptPartTypes) {
 			const util = promptPartUtils[promptPartType]
 			if (!util) throw new Error(`Prompt part util not found for part type: ${promptPartType}`)
-			const part = await util.getPart(structuredClone(request), helpers)
+			const part = await util.getPart(preparedRequest, helpers)
 			if (!part) continue
 			transformedParts.push(part)
 		}
 
 		return Object.fromEntries(transformedParts.map((part) => [part.type, part])) as AgentPrompt
+	}
+
+	/**
+	 * Commit the state consumption of every part in a prompt. Called exactly
+	 * once per successful request - see PromptPartUtil.commitPart.
+	 */
+	private commitPromptParts(prompt: AgentPrompt, request: AgentRequest) {
+		for (const part of Object.values(prompt)) {
+			if (!part) continue
+			const util = this.promptPartUtils[part.type as PromptPart['type']]
+			util?.commitPart?.(part as never, request)
+		}
 	}
 
 	/**
@@ -356,6 +378,20 @@ export class TldrawAgent {
 			// the agent gets its full continuation budget back.
 			if (request.source === 'user') {
 				this.requests.resetContinuationCount()
+
+				// Anchor the chat origin on the conversation's first prompt. The
+				// origin offsets every coordinate sent to the model to keep the
+				// numbers small; it was previously only ever set by "new chat",
+				// so most sessions ran with a zero vector and the entire offset
+				// machinery was inert. Helpers snapshot the origin when they're
+				// constructed, so this must happen before the request runs.
+				const hasPromptedBefore = this.chat
+					.getHistory()
+					.some((item) => item.type === 'prompt')
+				if (!hasPromptedBefore) {
+					const viewport = this.editor.getViewportPageBounds()
+					this.chatOrigin.setOrigin({ x: viewport.x, y: viewport.y })
+				}
 			}
 
 			const startingNode = this.mode.getCurrentModeNode()
@@ -867,6 +903,9 @@ export class TldrawAgent {
 					}
 				}
 				await Promise.all(actionPromises)
+				// The request succeeded: only now do prompt parts consume the
+				// state they reported (user-action history, surfaced lints).
+				this.commitPromptParts(prompt, request)
 				return { status: 'success' } as const
 			} catch (e) {
 				// User cancellation: the cancel() below sets `cancelled` before
