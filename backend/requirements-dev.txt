@@ -1,5 +1,7 @@
-# Test-only dependencies. The suite covers the pure streaming/parsing logic and
-# deliberately imports no litellm, so `pip install -r requirements.txt` is not
-# needed to run it.
+# Test-only dependencies. The runtime requirements are genuinely needed here:
+# the suite covers main.py (via fastapi.testclient) and llm_service.py (with
+# litellm.acompletion monkeypatched), so fastapi/litellm must be importable -
+# but everything still runs offline with no keys.
 -r requirements.txt
-pytest~=8.3
+pytest~=9.1.1
+httpx~=0.28

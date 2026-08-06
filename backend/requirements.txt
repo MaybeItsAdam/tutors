@@ -1,6 +1,9 @@
-# Compatible-release pins: allow patch/bugfix updates but block the frequent
+# Patch-floating pins (~=X.Y.Z): allow bugfix updates but block the frequent
 # breaking minor releases (litellm especially). Bump deliberately.
-fastapi~=0.115.0
-uvicorn[standard]~=0.34.0
-litellm~=1.55
-python-dotenv~=1.0
+# NOTE: the previous `litellm~=1.55` style pinned only the MAJOR version -
+# under PEP 440, ~=1.55 means >=1.55,==1.* and lets every 1.x minor through,
+# which is exactly what the pins exist to prevent.
+fastapi~=0.141.1
+uvicorn[standard]~=0.52.1
+litellm~=1.95.0
+python-dotenv~=1.2.2
