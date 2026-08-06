@@ -1,9 +1,9 @@
-import { evaluate } from 'mathjs'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BaseBoxShapeUtil, HTMLContainer, useEditor, useValue } from 'tldraw'
 import { IEquationShape } from '../equation/EquationShape'
 import { vectorFieldShapeProps, IVectorFieldShape } from './VectorFieldShape'
 import { latexToMathjsLines } from '../../utils/latexToMathjs'
+import { compileExpression } from '../../utils/mathCompile'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +47,11 @@ function VectorFieldRenderer({
 	const editor = useEditor()
 	const { w, h, expression, xMin, xMax, yMin, yMax, density } = shape.props
 	const [editExpr, setEditExpr] = useState(expression)
+	// Sync the edit buffer with the prop so committing an untouched edit
+	// can't write a stale mount-time value back over an agent update.
+	useEffect(() => {
+		setEditExpr(expression)
+	}, [expression])
 	const inputRef = useRef<HTMLInputElement>(null)
 
 	const toSvgX = (x: number) => ((x - xMin) / (xMax - xMin)) * w
@@ -91,6 +96,12 @@ function VectorFieldRenderer({
 		const cellW = (xMax - xMin) / cols
 		const cellH = (yMax - yMin) / rows
 
+		// Compile once, evaluate per cell - evaluate() re-parses the string,
+		// which at ~270 cells x 2 expressions was ~540 parses per recompute.
+		const pFn = compileExpression(pExpr)
+		const qFn = compileExpression(qExpr)
+		if (!pFn || !qFn) return { arrows: [], maxMag: 0 }
+
 		const data: Array<{ wx: number; wy: number; p: number; q: number; mag: number }> = []
 		let maxMag = 0
 
@@ -100,8 +111,8 @@ function VectorFieldRenderer({
 				const wy = yMin + (j + 0.5) * cellH
 				let p: number, q: number
 				try {
-					p = evaluate(pExpr, { x: wx, y: wy })
-					q = evaluate(qExpr, { x: wx, y: wy })
+					p = pFn.evaluate({ x: wx, y: wy }) as number
+					q = qFn.evaluate({ x: wx, y: wy }) as number
 					if (!isFinite(p) || !isFinite(q)) continue
 				} catch { continue }
 				const mag = Math.hypot(p, q)

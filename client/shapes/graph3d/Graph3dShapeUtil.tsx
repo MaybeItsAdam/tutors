@@ -114,9 +114,12 @@ function Graph3dRenderer({
 	const sceneRef = useRef<THREE.Scene | null>(null)
 	const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
 	const controlsRef = useRef<OrbitControls | null>(null)
-	const meshRef = useRef<THREE.Mesh | null>(null)
-	const matrixArrowsRef = useRef<THREE.Object3D[]>([])
+	const matrixArrowsRef = useRef<THREE.ArrowHelper[]>([])
 	const rafRef = useRef<number>(0)
+	// Schedules a single render frame; set up by the mount effect. Every
+	// effect that changes what's on screen calls this instead of relying on a
+	// permanent 60fps loop.
+	const invalidateRef = useRef<() => void>(() => {})
 
 	const [editExpr, setEditExpr] = useState(expression)
 
@@ -205,7 +208,8 @@ function Graph3dRenderer({
 
 		// Axes helper
 		const axesLen = Math.max(xMax - xMin, yMax - yMin) * 0.5
-		scene.add(new THREE.AxesHelper(axesLen))
+		const axesHelper = new THREE.AxesHelper(axesLen)
+		scene.add(axesHelper)
 
 		// Grid on XZ plane
 		const gridHelper = new THREE.GridHelper(
@@ -223,31 +227,79 @@ function Graph3dRenderer({
 		dirLight.position.set(5, 10, 5)
 		scene.add(dirLight)
 
-		// Render loop
-		const animate = () => {
-			rafRef.current = requestAnimationFrame(animate)
-			controls.update()
-			dispatchGraph3dOrientation({
-				shapeId: shape.id,
-				axes: {
-					x: { x: 1, y: 0, z: 0 },
-					y: { x: 0, y: 1, z: 0 },
-					z: { x: 0, y: 0, z: 1 },
-				},
-				quaternion: {
-					x: camera.quaternion.x,
-					y: camera.quaternion.y,
-					z: camera.quaternion.z,
-					w: camera.quaternion.w,
-				},
-			})
+		// ── Render on demand ──
+		// The previous version ran an unconditional 60fps rAF loop from mount,
+		// dispatching a window CustomEvent per frame - N shapes meant N
+		// permanent loops, even off-screen with nothing changing. Now a frame
+		// renders only when something invalidates (controls, effects), it
+		// self-continues only while OrbitControls damping is still settling,
+		// and the orientation event fires only when the camera actually moved.
+		let rafPending = false
+		let visible = true
+		const lastQuaternion = new THREE.Quaternion(NaN, NaN, NaN, NaN)
+
+		const renderFrame = () => {
+			rafPending = false
+			const stillMoving = controls.update()
+			if (!camera.quaternion.equals(lastQuaternion)) {
+				lastQuaternion.copy(camera.quaternion)
+				dispatchGraph3dOrientation({
+					shapeId: shape.id,
+					axes: {
+						x: { x: 1, y: 0, z: 0 },
+						y: { x: 0, y: 1, z: 0 },
+						z: { x: 0, y: 0, z: 1 },
+					},
+					quaternion: {
+						x: camera.quaternion.x,
+						y: camera.quaternion.y,
+						z: camera.quaternion.z,
+						w: camera.quaternion.w,
+					},
+				})
+			}
 			renderer.render(scene, camera)
+			if (stillMoving) invalidate()
 		}
-		animate()
+
+		const invalidate = () => {
+			if (!visible || rafPending) return
+			rafPending = true
+			rafRef.current = requestAnimationFrame(renderFrame)
+		}
+		invalidateRef.current = invalidate
+
+		const handleControlsChange = () => invalidate()
+		controls.addEventListener('change', handleControlsChange)
+		controls.addEventListener('start', handleControlsChange)
+
+		// Pause entirely while scrolled out of view (same pattern as
+		// TldrawViewer's IntersectionObserver-gated mounting).
+		const intersectionObserver = new IntersectionObserver(([entry]) => {
+			visible = entry?.isIntersecting ?? true
+			if (visible) {
+				invalidate()
+			} else if (rafPending) {
+				cancelAnimationFrame(rafRef.current)
+				rafPending = false
+			}
+		})
+		intersectionObserver.observe(canvas)
+
+		invalidate()
 
 		return () => {
 			cancelAnimationFrame(rafRef.current)
+			rafPending = false
+			invalidateRef.current = () => {}
+			intersectionObserver.disconnect()
+			controls.removeEventListener('change', handleControlsChange)
+			controls.removeEventListener('start', handleControlsChange)
 			controls.dispose()
+			// Dispose everything the mount owns (the surface mesh and matrix
+			// arrows are owned - and disposed - by their own effects).
+			axesHelper.dispose()
+			gridHelper.dispose()
 			renderer.dispose()
 		}
 		// Only run once on mount
@@ -255,23 +307,17 @@ function Graph3dRenderer({
 	}, [])
 
 	// ── Update surface mesh when expression or bounds change ──
+	// Skipped entirely in matrix mode - the surface is hidden there, and the
+	// previous version still built (and then orphaned) a geometry for it.
 	const geo = useMemo(
-		() => buildGeometry(activeExpression, xMin, xMax, yMin, yMax, resolution),
-		[activeExpression, xMin, xMax, yMin, yMax, resolution]
+		() =>
+			boundMatrix ? null : buildGeometry(activeExpression, xMin, xMax, yMin, yMax, resolution),
+		[activeExpression, xMin, xMax, yMin, yMax, resolution, boundMatrix]
 	)
 
 	useEffect(() => {
 		const scene = sceneRef.current
-		if (!scene) return
-
-		// Remove old mesh
-		if (meshRef.current) {
-			scene.remove(meshRef.current)
-			meshRef.current.geometry.dispose()
-		}
-
-		// Hide surface when showing matrix transform
-		if (boundMatrix) return
+		if (!scene || !geo) return
 
 		const material = new THREE.MeshPhongMaterial({
 			vertexColors: true,
@@ -280,9 +326,10 @@ function Graph3dRenderer({
 		})
 		const mesh = new THREE.Mesh(geo, material)
 		scene.add(mesh)
-		meshRef.current = mesh
 
-		// Wireframe overlay
+		// Wireframe overlay. This mesh used to be added and never tracked, so
+		// every expression/bounds change stacked another wireframe permanently
+		// (visual ghosting + GPU memory leak); materials were never disposed.
 		const wfMat = new THREE.MeshBasicMaterial({
 			color: 0x334155,
 			wireframe: true,
@@ -291,16 +338,25 @@ function Graph3dRenderer({
 		})
 		const wfMesh = new THREE.Mesh(geo, wfMat)
 		scene.add(wfMesh)
-	}, [geo, boundMatrix])
+
+		invalidateRef.current()
+
+		return () => {
+			scene.remove(mesh)
+			scene.remove(wfMesh)
+			material.dispose()
+			wfMat.dispose()
+			// The geometry is shared by the surface and the wireframe - one
+			// dispose, in the effect that owns it.
+			geo.dispose()
+			invalidateRef.current()
+		}
+	}, [geo])
 
 	// ── Matrix 3D visualization: transformed basis arrows ──
 	useEffect(() => {
 		const scene = sceneRef.current
 		if (!scene) return
-
-		// Remove old matrix arrows
-		for (const obj of matrixArrowsRef.current) scene.remove(obj)
-		matrixArrowsRef.current = []
 
 		if (!boundMatrix) return
 
@@ -336,12 +392,26 @@ function Graph3dRenderer({
 			scene.add(arrow)
 			matrixArrowsRef.current.push(arrow)
 		}
+
+		invalidateRef.current()
+
+		return () => {
+			// ArrowHelper owns a line and a cone; dispose() releases both -
+			// they used to be removed from the scene but never disposed.
+			for (const arrow of matrixArrowsRef.current) {
+				scene.remove(arrow)
+				arrow.dispose()
+			}
+			matrixArrowsRef.current = []
+			invalidateRef.current()
+		}
 	}, [boundMatrix, xMin, xMax, yMin, yMax])
 
 	// ── Toggle orbit controls with edit mode ──
 	useEffect(() => {
 		if (controlsRef.current) {
 			controlsRef.current.enabled = canOrbit
+			invalidateRef.current()
 		}
 	}, [canOrbit])
 
@@ -399,6 +469,8 @@ function Graph3dRenderer({
 					break
 				}
 			}
+
+			invalidateRef.current()
 		}
 
 		window.addEventListener(GRAPH3D_CONTROL_EVENT, handleControlEvent as EventListener)
@@ -415,6 +487,7 @@ function Graph3dRenderer({
 		renderer.setSize(w, h)
 		camera.aspect = w / h
 		camera.updateProjectionMatrix()
+		invalidateRef.current()
 	}, [w, h])
 
 	const handleExprKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

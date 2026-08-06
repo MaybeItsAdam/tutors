@@ -1,9 +1,10 @@
-import { compile, complex } from 'mathjs'
+import { complex } from 'mathjs'
 import { useEffect, useRef, useState } from 'react'
 import { BaseBoxShapeUtil, HTMLContainer, useEditor, useValue } from 'tldraw'
 import { complexPlaneShapeProps, IComplexPlaneShape } from './ComplexPlaneShape'
 import { IEquationShape } from '../equation/EquationShape'
 import { latexToMathjsLines } from '../../utils/latexToMathjs'
+import { compileExpression } from '../../utils/mathCompile'
 
 // ── Domain colouring ──────────────────────────────────────────────────────────
 
@@ -52,6 +53,11 @@ function ComplexPlaneRenderer({
 	const editor = useEditor()
 	const { w, h, expression, xMin, xMax, yMin, yMax } = shape.props
 	const [editExpr, setEditExpr] = useState(expression)
+	// Sync the edit buffer with the prop so committing an untouched edit
+	// can't write a stale mount-time value back over an agent update.
+	useEffect(() => {
+		setEditExpr(expression)
+	}, [expression])
 	const canvasRef = useRef<HTMLCanvasElement>(null)
 
 	// Detect an equation shape bound via arrow → use its first mathjs line as f(z)
@@ -76,6 +82,16 @@ function ComplexPlaneRenderer({
 
 	const activeExpression = boundExpression ?? expression
 
+	// Debounce the dimensions: the recompute used to be keyed directly on w/h,
+	// re-running the whole per-pixel loop continuously during a resize drag.
+	// The canvas is CSS-stretched (100%), so the stale bitmap scales while the
+	// user drags and the recompute lands once the size settles.
+	const [debouncedDims, setDebouncedDims] = useState({ w, h })
+	useEffect(() => {
+		const timer = setTimeout(() => setDebouncedDims({ w, h }), 150)
+		return () => clearTimeout(timer)
+	}, [w, h])
+
 	// Recompute domain colouring whenever the expression or viewport changes
 	useEffect(() => {
 		const canvas = canvasRef.current
@@ -83,22 +99,22 @@ function ComplexPlaneRenderer({
 		const ctx = canvas.getContext('2d')
 		if (!ctx) return
 
+		const { w: dw, h: dh } = debouncedDims
+
 		let cancelled = false
+		let raf = 0
 
 		// Render at 1/3 pixel density then scale up — keeps it snappy
 		const DOWNSAMPLE = 3
-		const cw = Math.max(1, Math.round(w / DOWNSAMPLE))
-		const ch = Math.max(1, Math.round(h / DOWNSAMPLE))
+		const cw = Math.max(1, Math.round(dw / DOWNSAMPLE))
+		const ch = Math.max(1, Math.round(dh / DOWNSAMPLE))
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		let compiled: { evaluate(scope: Record<string, unknown>): unknown }
-		try {
-			compiled = compile(activeExpression) as any
-		} catch {
-			canvas.width = w
-			canvas.height = h
+		const compiled = compileExpression(activeExpression)
+		if (!compiled) {
+			canvas.width = dw
+			canvas.height = dh
 			ctx.fillStyle = '#0f1117'
-			ctx.fillRect(0, 0, w, h)
+			ctx.fillRect(0, 0, dw, dh)
 			ctx.fillStyle = 'rgba(239,68,68,0.6)'
 			ctx.font = '12px monospace'
 			ctx.fillText('parse error', 8, 20)
@@ -106,45 +122,63 @@ function ComplexPlaneRenderer({
 		}
 
 		const pixels = new Uint8ClampedArray(cw * ch * 4)
+		const iUnit = complex(0, 1)
 
-		for (let py = 0; py < ch; py++) {
-			if (cancelled) break
-			for (let px = 0; px < cw; px++) {
-				const wx = xMin + (px + 0.5) / cw * (xMax - xMin)
-				const wy = yMax - (py + 0.5) / ch * (yMax - yMin)
+		// Chunk the per-pixel loop across animation frames (~6ms per slice).
+		// The loop used to run synchronously (~17k compiled evaluations at the
+		// default size) inside the effect, blocking the main thread - and the
+		// `cancelled` flag could never actually interrupt it. Now cleanup
+		// genuinely cancels between chunks.
+		let py = 0
+		const computeChunk = () => {
+			if (cancelled) return
+			const sliceStart = performance.now()
+			while (py < ch && performance.now() - sliceStart < 6) {
+				for (let px = 0; px < cw; px++) {
+					const wx = xMin + (px + 0.5) / cw * (xMax - xMin)
+					const wy = yMax - (py + 0.5) / ch * (yMax - yMin)
 
-				let r = 18, g = 18, b = 28
-				try {
-					const result = compiled!.evaluate({
-						z: complex(wx, wy),
-						i: complex(0, 1),
-					})
-					const rePart = typeof result === 'number' ? result : (result as any)?.re ?? 0
-					const imPart = typeof result === 'number' ? 0 : (result as any)?.im ?? 0
-					;[r, g, b] = domainColor(rePart, imPart)
-				} catch { /* leave dark */ }
+					let r = 18, g = 18, b = 28
+					try {
+						const result = compiled.evaluate({
+							z: complex(wx, wy),
+							i: iUnit,
+						})
+						const rePart = typeof result === 'number' ? result : (result as any)?.re ?? 0
+						const imPart = typeof result === 'number' ? 0 : (result as any)?.im ?? 0
+						;[r, g, b] = domainColor(rePart, imPart)
+					} catch { /* leave dark */ }
 
-				const idx = (py * cw + px) * 4
-				pixels[idx] = r
-				pixels[idx + 1] = g
-				pixels[idx + 2] = b
-				pixels[idx + 3] = 255
+					const idx = (py * cw + px) * 4
+					pixels[idx] = r
+					pixels[idx + 1] = g
+					pixels[idx + 2] = b
+					pixels[idx + 3] = 255
+				}
+				py++
 			}
-		}
 
-		if (!cancelled) {
+			if (py < ch) {
+				raf = requestAnimationFrame(computeChunk)
+				return
+			}
+
 			const tmp = document.createElement('canvas')
 			tmp.width = cw
 			tmp.height = ch
 			tmp.getContext('2d')!.putImageData(new ImageData(pixels, cw, ch), 0, 0)
-			canvas.width = w
-			canvas.height = h
+			canvas.width = dw
+			canvas.height = dh
 			ctx.imageSmoothingEnabled = false
-			ctx.drawImage(tmp, 0, 0, w, h)
+			ctx.drawImage(tmp, 0, 0, dw, dh)
 		}
+		computeChunk()
 
-		return () => { cancelled = true }
-	}, [activeExpression, xMin, xMax, yMin, yMax, w, h])
+		return () => {
+			cancelled = true
+			cancelAnimationFrame(raf)
+		}
+	}, [activeExpression, xMin, xMax, yMin, yMax, debouncedDims])
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
 		e.stopPropagation()
@@ -181,7 +215,9 @@ function ComplexPlaneRenderer({
 				ref={canvasRef}
 				width={w}
 				height={h}
-				style={{ position: 'absolute', inset: 0, borderRadius: 8 }}
+				// CSS-stretched so the stale bitmap scales during a live resize
+				// while the debounced recompute waits for the size to settle.
+				style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: 8 }}
 			/>
 
 			{/* Axes + labels overlay */}
