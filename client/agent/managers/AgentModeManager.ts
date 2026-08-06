@@ -47,9 +47,11 @@ export class AgentModeManager extends BaseAgentManager {
 	setMode(newMode: AgentModeType) {
 		const fromMode = this.getCurrentModeType()
 
-		// TODO see if this is needed, or if it should just be a return, or if we can remove it entirely
+		// Same-mode transitions are no-ops: re-firing onExit/onEnter would be
+		// wrong, and throwing turned innocuous calls (an interrupt into the
+		// mode the agent is already in) into session-breaking errors.
 		if (fromMode === newMode) {
-			throw new Error(`Agent is already in mode: ${newMode}`)
+			return
 		}
 
 		const fromModeNode = this.getCurrentModeNode()

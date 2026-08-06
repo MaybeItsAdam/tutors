@@ -1,6 +1,6 @@
 import { RecordsDiff, structuredClone, TLRecord } from 'tldraw'
 import { AgentAction } from '../../../shared/types/AgentAction'
-import { ChatHistoryItem } from '../../../shared/types/ChatHistoryItem'
+import { ChatHistoryFailedActionItem, ChatHistoryItem } from '../../../shared/types/ChatHistoryItem'
 import { Streaming } from '../../../shared/types/Streaming'
 import { AgentActionUtil, getAgentActionUtilsRecord } from '../../actions/AgentActionUtil'
 import { AgentHelpers } from '../../AgentHelpers'
@@ -66,6 +66,29 @@ export class AgentActionManager extends BaseAgentManager {
 	}
 
 	/**
+	 * Record an action that was NOT applied, so the model finds out.
+	 *
+	 * The model is told to assume its history's actions succeeded - a
+	 * silently dropped action leaves it building on state that doesn't
+	 * exist for up to a full continuation budget of self-billed turns.
+	 * Only complete actions are recorded: incomplete ones are transient
+	 * streaming states, not final failures.
+	 */
+	recordFailedAction(
+		action: Streaming<AgentAction>,
+		kind: ChatHistoryFailedActionItem['kind'],
+		reason: string
+	): void {
+		if (!action.complete) return
+		this.agent.chat.push({
+			type: 'failed-action',
+			action: structuredClone(action),
+			kind,
+			reason,
+		})
+	}
+
+	/**
 	 * Make the agent perform an action.
 	 * Applies the action to the editor and tracks it in chat history.
 	 * @param action - The action to make the agent do.
@@ -91,7 +114,14 @@ export class AgentActionManager extends BaseAgentManager {
 			})
 		} catch (error) {
 			// Surface the error, but don't abort the whole stream for one bad
-			// action — skip it and let the remaining actions apply.
+			// action — skip it and let the remaining actions apply. Record the
+			// failure so the model knows the action's effects don't exist
+			// (previously this path left no trace at all).
+			this.recordFailedAction(
+				action,
+				'apply-error',
+				error instanceof Error ? error.message : String(error)
+			)
 			this.agent.onError(error)
 			return { diff: { added: {}, updated: {}, removed: {} }, promise: null }
 		} finally {

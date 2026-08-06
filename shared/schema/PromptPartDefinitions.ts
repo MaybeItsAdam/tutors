@@ -301,6 +301,23 @@ function buildHistoryItemMessage(item: ChatHistoryItem, priority: number): Agent
 				priority,
 			}
 		}
+		case 'failed-action': {
+			// Role 'user': this is environment feedback about the attempt, not
+			// something the model said. The model is told elsewhere to assume
+			// its [ACTION]s succeeded - this is the exception that keeps it
+			// from building on effects that don't exist.
+			const { complete: _complete, time: _time, ...rawAction } = item.action || {}
+			return {
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `[ACTION FAILED — NOT APPLIED] (${item.reason}): ${JSON.stringify(rawAction)}`,
+					},
+				],
+				priority,
+			}
+		}
 	}
 }
 
