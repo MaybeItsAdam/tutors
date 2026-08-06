@@ -1,15 +1,17 @@
 import json
 
-from action_stream import TRUNCATED_MESSAGE, ActionStreamEmitter
+from action_stream import NO_ACTIONS_MESSAGE, TRUNCATED_MESSAGE, ActionStreamEmitter
 
 
-def emit_all(chunks, prefill=""):
+def emit_all(chunks, prefill="", finish_reason=None):
     """Run a chunk sequence through an emitter and return every payload."""
-    emitter = ActionStreamEmitter(prefill=prefill)
+    # emit_interval_ms=0 parses on every delta, so tests observe the full
+    # unthrottled emission sequence deterministically.
+    emitter = ActionStreamEmitter(prefill=prefill, emit_interval_ms=0)
     payloads = []
     for chunk in chunks:
         payloads.extend(emitter.feed(chunk))
-    payloads.extend(emitter.finish())
+    payloads.extend(emitter.finish(finish_reason))
     return payloads
 
 
@@ -99,10 +101,10 @@ class TestIncrementalStreaming:
 
 
 class TestTruncation:
-    """A response cut off by the token ceiling must not commit its last action."""
+    """A response cut off by the token ceiling must not commit a half-written action."""
 
     def test_length_finish_reason_reports_an_error(self):
-        emitter = ActionStreamEmitter()
+        emitter = ActionStreamEmitter(emit_interval_ms=0)
         emitter.feed('{"actions": [{"_type": "think", "text": "half writ')
 
         payloads = emitter.finish("length")
@@ -110,7 +112,7 @@ class TestTruncation:
         assert payloads == [{"error": TRUNCATED_MESSAGE}]
 
     def test_actions_finished_before_truncation_are_kept(self):
-        emitter = ActionStreamEmitter()
+        emitter = ActionStreamEmitter(emit_interval_ms=0)
         payloads = emitter.feed(
             '{"actions": [{"_type": "think", "text": "done"},'
             ' {"_type": "think", "text": "half writ'
@@ -121,13 +123,31 @@ class TestTruncation:
         assert payloads[-1] == {"error": TRUNCATED_MESSAGE}
 
     def test_normal_finish_completes_the_trailing_action(self):
-        emitter = ActionStreamEmitter()
+        emitter = ActionStreamEmitter(emit_interval_ms=0)
         emitter.feed(document([think("only")]))
 
         payloads = emitter.finish("stop")
 
         assert [p["text"] for p in payloads] == ["only"]
         assert payloads[0]["complete"] is True
+
+    def test_fully_closed_final_action_is_committed_on_truncation(self):
+        # The cutoff landed after the action's closing brace - only the
+        # envelope was open, so the action is trustworthy and must be kept.
+        emitter = ActionStreamEmitter(emit_interval_ms=0)
+        emitter.feed('{"actions": [{"_type": "think", "text": "done"}')
+
+        payloads = emitter.finish("length")
+
+        assert [p["text"] for p in completed(payloads)] == ["done"]
+        assert not any("error" in p for p in payloads)
+
+    def test_truncation_with_nothing_parsed_still_reports_an_error(self):
+        # Previously this returned [] - the user saw the AI "do nothing".
+        emitter = ActionStreamEmitter(emit_interval_ms=0)
+        emitter.feed("not json")
+
+        assert emitter.finish("length") == [{"error": TRUNCATED_MESSAGE}]
 
 
 class TestPrefill:
@@ -154,14 +174,150 @@ class TestDegenerateInput:
     def test_empty_stream(self):
         assert emit_all([]) == []
 
-    def test_prose_instead_of_json(self):
-        assert emit_all(["I'm sorry, I can't help with that."]) == []
+    def test_prose_instead_of_json_reports_an_error(self):
+        # Previously silent - the turn ended with no actions and no explanation.
+        assert emit_all(["I'm sorry, I can't help with that."]) == [
+            {"error": NO_ACTIONS_MESSAGE}
+        ]
 
-    def test_valid_json_without_an_actions_array(self):
-        assert emit_all(['{"result": "ok"}']) == []
+    def test_valid_json_without_an_actions_array_reports_an_error(self):
+        assert emit_all(['{"result": "ok"}']) == [{"error": NO_ACTIONS_MESSAGE}]
 
-    def test_actions_is_not_a_list(self):
-        assert emit_all(['{"actions": "nope"}']) == []
+    def test_actions_is_not_a_list_reports_an_error(self):
+        assert emit_all(['{"actions": "nope"}']) == [{"error": NO_ACTIONS_MESSAGE}]
 
-    def test_empty_actions_array(self):
+    def test_empty_actions_array_is_a_legitimate_no_op(self):
         assert emit_all(['{"actions": []}']) == []
+
+
+class TestNonDictActionElements:
+    """
+    Regression tests for the whole stream dying on one bad array element.
+
+    `_payload` used to call `dict(action)` on whatever the model put in the
+    array; `{"actions": [42]}` raised TypeError, the blanket handler turned it
+    into a generic error, and every valid action already streamed was lost.
+    """
+
+    def test_bare_number_element_is_skipped(self):
+        assert completed(emit_all([document([42])])) == []
+
+    def test_null_element_is_skipped(self):
+        assert completed(emit_all([document([None])])) == []
+
+    def test_string_element_is_skipped(self):
+        assert completed(emit_all([document(["hello"])])) == []
+
+    def test_nested_list_element_is_skipped(self):
+        assert completed(emit_all([document([[1, 2]])])) == []
+
+    def test_valid_actions_around_junk_still_emit(self):
+        doc = document([think("a"), 42, think("b")])
+
+        texts = [p["text"] for p in completed(emit_all([doc]))]
+
+        assert texts == ["a", "b"]
+
+    def test_nothing_raises_for_any_junk_document(self):
+        for junk in [[42], [None], ["x"], [[1]], [42, None]]:
+            emit_all([document(junk)])
+
+
+class TestFencedAndProseWrappedOutput:
+    """
+    Models that ignore JSON mode wrap the document in markdown fences or
+    prose. Everything before the first '{' and after the closing '}' is junk.
+    """
+
+    def test_fenced_document_in_one_chunk(self):
+        doc = document([think("fenced")])
+
+        texts = [p["text"] for p in completed(emit_all([f"```json\n{doc}\n```"]))]
+
+        assert texts == ["fenced"]
+
+    def test_fence_split_across_chunks(self):
+        doc = document([think("split")])
+        chunks = ["```js", "on\n", doc[:10], doc[10:], "\n``", "`"]
+
+        texts = [p["text"] for p in completed(emit_all(chunks))]
+
+        assert texts == ["split"]
+
+    def test_prose_preamble_before_the_document(self):
+        doc = document([think("after prose")])
+
+        texts = [p["text"] for p in completed(emit_all(["Here is my plan:\n", doc]))]
+
+        assert texts == ["after prose"]
+
+    def test_prose_postamble_after_the_document(self):
+        doc = document([think("before prose")])
+
+        payloads = emit_all([doc, "\nLet me know if you need anything else!"])
+
+        assert [p["text"] for p in completed(payloads)] == ["before prose"]
+        assert not any("error" in p for p in payloads)
+
+
+class TestThrottling:
+    """
+    Parsing runs json.loads over the whole buffer, so it's rate-limited by
+    emit_interval_ms. Completions deferred by the throttle must still all
+    arrive - at the next allowed parse or at finish() - exactly once.
+    """
+
+    def test_feeds_inside_the_window_emit_nothing(self):
+        clock = FakeClock()
+        emitter = ActionStreamEmitter(clock=clock, emit_interval_ms=30)
+        doc = document([think("a")])
+
+        first = emitter.feed(doc[:10])  # first parse is always allowed
+        rest = []
+        for ch in doc[10:]:
+            rest.extend(emitter.feed(ch))  # all within the same 30ms window
+
+        assert first == []  # first 10 chars don't parse to an action yet
+        assert rest == []
+        assert [p["text"] for p in completed(emitter.finish())] == ["a"]
+
+    def test_completions_flush_at_the_next_allowed_parse(self):
+        clock = FakeClock()
+        emitter = ActionStreamEmitter(clock=clock, emit_interval_ms=30)
+        doc = document([think("a"), think("b")])
+        cut = doc.index('{"_type": "think", "text": "b"}')
+
+        emitter.feed(doc[:5])  # first parse consumed by an unparseable prefix
+        assert emitter.feed(doc[5:cut]) == []  # throttled: 'a' completion deferred
+
+        clock.advance(31)
+        payloads = emitter.feed(doc[cut:])
+        payloads.extend(emitter.finish())
+
+        assert [p["text"] for p in completed(payloads)] == ["a", "b"]
+
+    def test_every_action_completes_exactly_once_with_throttling(self):
+        clock = FakeClock()
+        emitter = ActionStreamEmitter(clock=clock, emit_interval_ms=30)
+        doc = document([think("a"), think("b"), think("c")])
+
+        payloads = []
+        for i, ch in enumerate(doc):
+            if i % 7 == 0:
+                clock.advance(31)
+            payloads.extend(emitter.feed(ch))
+        payloads.extend(emitter.finish())
+
+        texts = [p["text"] for p in completed(payloads)]
+        assert texts == ["a", "b", "c"]
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1_000
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, ms):
+        self.now += ms

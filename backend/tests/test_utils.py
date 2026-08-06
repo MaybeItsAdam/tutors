@@ -104,3 +104,78 @@ class TestIncrementalEquivalence:
         parser.feed('{"a":')
         parser.feed(" 1}")
         assert parser.buffer == '{"a": 1}'
+
+
+class TestDepth:
+    """The delimiter-stack depth is exposed for truncation-commit decisions."""
+
+    def test_depth_tracks_open_delimiters(self):
+        parser = IncrementalJsonParser()
+        assert parser.depth == 0
+        parser.feed('{"actions": [')
+        assert parser.depth == 2
+        parser.feed('{"_type": "think"')
+        assert parser.depth == 3
+        parser.feed("}")
+        assert parser.depth == 2
+
+    def test_open_string_counts_toward_depth(self):
+        parser = IncrementalJsonParser()
+        parser.feed('{"actions": [{"text": "half writ')
+        assert parser.depth == 4
+
+
+class TestDocumentCompletion:
+    """
+    Once the outermost delimiter closes, the buffer freezes there: trailing
+    markdown fences or prose would otherwise poison json.loads forever.
+    """
+
+    def test_trailing_junk_after_the_document_is_ignored(self):
+        parser = IncrementalJsonParser()
+        parser.feed('{"a": 1}')
+        assert parser.complete
+        assert parser.feed("\n```\nHope that helps!") == {"a": 1}
+        assert parser.buffer == '{"a": 1}'
+
+    def test_junk_in_the_same_chunk_as_the_close_is_ignored(self):
+        parser = IncrementalJsonParser()
+        assert parser.feed('{"a": 1}\n```') == {"a": 1}
+        assert parser.buffer == '{"a": 1}'
+
+    def test_completion_is_sticky(self):
+        parser = IncrementalJsonParser()
+        parser.feed('{"a": 1}')
+        parser.feed('{"b": 2}')
+        assert parser.parse() == {"a": 1}
+        assert parser.depth == 0
+
+    def test_incomplete_document_is_not_complete(self):
+        parser = IncrementalJsonParser()
+        parser.feed('{"a": [1, 2')
+        assert not parser.complete
+
+    def test_braces_in_strings_do_not_end_the_document(self):
+        parser = IncrementalJsonParser()
+        parser.feed('{"text": "not the end }"')
+        assert not parser.complete
+        parser.feed("}")
+        assert parser.complete
+
+
+class TestIngestParseSplit:
+    """ingest() + parse() must be exactly equivalent to feed()."""
+
+    def test_ingest_then_parse_matches_feed(self):
+        doc = '{"actions": [{"_type": "think", "text": "hello"}]}'
+        for cut in range(len(doc) + 1):
+            fed = IncrementalJsonParser()
+            split = IncrementalJsonParser()
+            fed_result = fed.feed(doc[:cut])
+            split.ingest(doc[:cut])
+            assert split.parse() == fed_result
+
+    def test_ingest_alone_does_not_parse(self):
+        parser = IncrementalJsonParser()
+        assert parser.ingest('{"a": 1}') is None
+        assert parser.parse() == {"a": 1}

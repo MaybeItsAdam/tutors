@@ -47,8 +47,10 @@ pip install -r backend/requirements-dev.txt
 python -m pytest backend/tests -q
 ```
 The suite covers `backend/utils.py` (incremental JSON parsing of a streaming
-response) and `backend/action_stream.py` (turning that stream into agent
-actions). Both are pure and import no litellm, so they run fast and offline.
+response), `backend/action_stream.py` (turning that stream into agent
+actions), and `backend/llm_service.py` (the stream loop, with
+`litellm.acompletion` monkeypatched to a fake async stream). Everything runs
+offline - no network, no keys.
 
 ## Important System Prompts / Architecture Notes
 - The AI is NOT a chatbox. The chat UI merely initiates interactions; the AI outputs structured JSON shapes directly to the canvas spatial environment (e.g., drawing `EquationShape` instances).
