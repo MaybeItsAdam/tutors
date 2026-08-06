@@ -1,12 +1,9 @@
 import z from 'zod'
 import {
-	getDefaultActionSchema,
-	hasDefaultActionSchema,
+	getRegisteredActionSchema,
+	hasRegisteredActionSchema,
 	registerActionSchema,
 } from '../schema/AgentActionSchemaRegistry'
-
-// Re-export mode-aware schema lookup
-export { getActionSchemaForMode } from '../schema/AgentActionSchemaRegistry'
 
 // ============================================================================
 // Type Derivation
@@ -59,9 +56,9 @@ const schemasByType: Record<string, AgentActionSchema> = {}
 for (const value of Object.values(AllSchemas)) {
 	if (!isActionSchema(value)) continue
 	const type = getSchemaType(value)
-	// Skip if a default schema is already registered for this type
-	// (handles cases where multiple schemas share the same _type, e.g., mode-specific variants)
-	if (hasDefaultActionSchema(type)) continue
+	// Skip if a schema is already registered for this type
+	// (handles cases where multiple schemas share the same _type)
+	if (hasRegisteredActionSchema(type)) continue
 	registerActionSchema(type, value)
 	schemasByType[type] = value as AgentActionSchema
 }
@@ -75,10 +72,9 @@ export function getAllActionSchemas(): AgentActionSchema[] {
 
 /**
  * Get an action schema by its _type value.
- * Returns the default schema (ignoring mode).
  */
 export function getActionSchema(type: string): AgentActionSchema | undefined {
-	return getDefaultActionSchema(type) as AgentActionSchema | undefined
+	return getRegisteredActionSchema(type) as AgentActionSchema | undefined
 }
 
 /**

@@ -32,6 +32,13 @@ export function getAllPromptPartUtils(): PromptPartUtilConstructor<PromptPart>[]
 }
 
 /**
+ * Check whether a prompt part util is registered for a given part type.
+ */
+export function hasRegisteredPromptPartUtil(type: string): boolean {
+	return registry.has(type)
+}
+
+/**
  * Get an object containing instantiated prompt part utils for an agent.
  */
 export function getPromptPartUtilsRecord(agent: TldrawAgent) {

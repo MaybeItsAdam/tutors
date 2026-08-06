@@ -29,13 +29,16 @@ export const EquationAction = z
 	.object({
 		_type: z.literal('equation'),
 		intent: z.string(),
+		shapeId: SimpleShapeIdSchema,
 		latex: z.string(),
 		x: z.number(),
 		y: z.number(),
 	})
 	.meta({
 		title: 'Equation',
-		description: 'The AI creates a new math equation on the canvas using LaTeX.',
+		description:
+			'The AI creates a new math equation on the canvas using LaTeX. ' +
+			'`shapeId` is a short unique id of your choice for the new shape, so you can refer to it in later actions.',
 	})
 
 export type EquationAction = z.infer<typeof EquationAction>
@@ -75,7 +78,6 @@ export const AlignAction = z
 	.object({
 		_type: z.literal('align'),
 		alignment: z.enum(['top', 'bottom', 'left', 'right', 'center-horizontal', 'center-vertical']),
-		gap: z.number(),
 		intent: z.string(),
 		shapeIds: z.array(SimpleShapeIdSchema),
 	})

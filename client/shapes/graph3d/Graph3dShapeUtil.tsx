@@ -55,8 +55,15 @@ function buildGeometry(
 		}
 	}
 
-	const zMin2 = Math.min(...zValues)
-	const zMax2 = Math.max(...zValues)
+	// Loop rather than Math.min(...spread): zValues has (resolution+1)^2 entries
+	// and resolution is a model-settable shape prop, so a spread can overflow
+	// the JS argument limit.
+	let zMin2 = Infinity
+	let zMax2 = -Infinity
+	for (const z of zValues) {
+		if (z < zMin2) zMin2 = z
+		if (z > zMax2) zMax2 = z
+	}
 	const zRange = zMax2 - zMin2 || 1
 
 	for (const { x, y, z } of pts) {

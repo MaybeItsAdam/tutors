@@ -1,5 +1,5 @@
 import z from 'zod'
-import { ActionMeta, AgentAction, getActionSchemaForMode } from '../types/AgentAction'
+import { ActionMeta, AgentAction, getActionSchema } from '../types/AgentAction'
 
 /**
  * Internal meta keys that should be stripped from the JSON schema.
@@ -27,9 +27,9 @@ export function stripInternalMeta(obj: object): object {
 	return obj
 }
 
-export function buildResponseSchema(actionTypes: AgentAction['_type'][], mode: string) {
+export function buildResponseSchema(actionTypes: AgentAction['_type'][]) {
 	const actionSchemas = actionTypes
-		.map((type) => getActionSchemaForMode(type, mode))
+		.map((type) => getActionSchema(type))
 		.filter((schema) => schema !== undefined)
 
 	if (actionSchemas.length === 0) {
