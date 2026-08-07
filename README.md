@@ -36,6 +36,16 @@ uvicorn main:app --reload --port 8000
 ```
 The FastAPI backend will be available at `http://localhost:8000/`.
 
+Backend tests run with `pip install -r requirements-dev.txt` then
+`python -m pytest tests -q` (offline — litellm is stubbed).
+
+> **Deploying behind a reverse proxy?** The per-IP rate limiter keys on the
+> direct socket address, so behind nginx/caddy every request shares the
+> proxy's IP. Run uvicorn with `--proxy-headers --forwarded-allow-ips=<proxy-ip>`
+> so the forwarded client address is used instead. Note the relay itself is
+> unauthenticated by design (BYOK): anyone who can reach it can proxy LLM
+> traffic through it with their own key.
+
 ### API keys
 
 API keys are entered in the app itself (the ⚙️ BYOK settings in the chat panel) and sent to the local backend as request headers on each request. They are stored unencrypted in your browser (localStorage, or sessionStorage if you choose session-only) — avoid saving keys on shared computers.
