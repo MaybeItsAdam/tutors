@@ -1,4 +1,4 @@
-import { StateNode, TLShapeId, createShapeId } from 'tldraw'
+import { StateNode, createShapeId } from 'tldraw'
 
 export class MathTool extends StateNode {
 	static override id = 'math'

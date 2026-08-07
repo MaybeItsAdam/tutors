@@ -12,12 +12,13 @@ import os
 import time
 from collections import defaultdict, deque
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from dotenv import load_dotenv
 import litellm
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
 import llm_service
 
 load_dotenv()
@@ -183,4 +184,9 @@ async def test_key(request: Request):
         return {"status": "ok", "provider": provider, "valid": True}
     except Exception:
         # Don't expose provider error details to the client
-        return {"status": "error", "provider": provider, "valid": False, "error": "Invalid API key or authentication failed"}
+        return {
+            "status": "error",
+            "provider": provider,
+            "valid": False,
+            "error": "Invalid API key or authentication failed",
+        }

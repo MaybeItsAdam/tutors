@@ -98,7 +98,7 @@ function VectorFieldRenderer({
 			for (let i = 0; i < cols; i++) {
 				const wx = xMin + (i + 0.5) * cellW
 				const wy = yMin + (j + 0.5) * cellH
-				let p = 0, q = 0
+				let p: number, q: number
 				try {
 					p = evaluate(pExpr, { x: wx, y: wy })
 					q = evaluate(qExpr, { x: wx, y: wy })

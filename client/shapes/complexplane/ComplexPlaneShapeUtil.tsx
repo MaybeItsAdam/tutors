@@ -91,7 +91,7 @@ function ComplexPlaneRenderer({
 		const ch = Math.max(1, Math.round(h / DOWNSAMPLE))
 
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		let compiled: { evaluate(scope: Record<string, unknown>): unknown } | null = null
+		let compiled: { evaluate(scope: Record<string, unknown>): unknown }
 		try {
 			compiled = compile(activeExpression) as any
 		} catch {

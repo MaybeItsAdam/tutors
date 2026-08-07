@@ -3,12 +3,10 @@ import 'katex/dist/katex.min.css'
 import {
 	BaseBoxShapeUtil,
 	HTMLContainer,
-	Rectangle2d,
-	useEditor,
 	useValue,
 } from 'tldraw'
 import { equationShapeProps, IEquationShape } from './EquationShape'
-import { latexToMathjs, latexToMathjsLines } from '../../utils/latexToMathjs'
+import { latexToMathjsLines } from '../../utils/latexToMathjs'
 import { evaluate } from 'mathjs'
 
 import 'mathlive'
@@ -153,7 +151,7 @@ function EquationDisplay({ shape, editor }: { shape: IEquationShape; editor: any
 			(_, body) => `\\begin{aligned}${body}\\end{aligned}`
 		)
 
-	let mainHtml = ''
+	let mainHtml: string
 	try {
 		mainHtml = katex.renderToString(normalizeForDisplay(latex), {
 			displayMode: true,

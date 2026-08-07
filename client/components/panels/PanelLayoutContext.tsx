@@ -148,7 +148,9 @@ export function useFreeDrag({
 			try {
 				const raw = localStorage.getItem(storageKey)
 				if (raw) return JSON.parse(raw)
-			} catch {}
+			} catch {
+				// Corrupt saved position - fall through to the default
+			}
 		}
 		return (
 			defaultPos ?? {

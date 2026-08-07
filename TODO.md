@@ -1,35 +1,39 @@
 # Project TODOs: BYOK AI Whiteboard
 
-You are picking up from the end of Step 3. The Vite frontend, tldraw canvas scaffolding, KaTeX mathematical shapes (EquationShape), and PDF ingestion pipeline (PdfDocumentShape) are complete and operational.
+Steps 1-4 are complete and operational: the Vite frontend, tldraw canvas, the
+custom maths shapes (KaTeX equations with a MathLive editor, 2D/3D plots,
+vector fields, complex-plane colouring), PDF ingestion, the Python FastAPI
+relay with BYOK headers, the full client-side agent system (actions, prompt
+parts, modes, todo loop with a 12-continuation budget), workspaces with
+branches/snapshots persisted to IndexedDB, and `.tutors.json` export/import.
 
-Your primarily goal now involves **Step 4: AI Communication Layer**, wiring up the Python backend, LLMs, and the BYOK UI.
+An audit-remediation series is in flight — see
+`docs/audit/2026-08-06-codebase-audit.md` for the findings and the PR sequence
+covering agent-loop resilience, backend stream hardening, shape performance,
+persistence, code splitting, and this test/lint infrastructure.
 
-## Immediate Next Steps (Step 4)
+## Open items
 
-- [x] **BYOK Configuration UI**
-  - Create a settings modal on the frontend where the user can input LLM API keys.
-  - Create a `BYOKStore` utility utilizing `localStorage` to securely persist the API keys locally.
-  - Inject the API keys via headers (`X-API-Key`, `X-Provider`, `X-Model`) on all network requests.
-
-- [x] **Python FastAPI Backend Core**
-  - Implement the chat schema endpoints inside `/backend/main.py`.
-  - Provide a `/api/chat` generic endpoint.
-  - ~~Implement a `/ws/chat` WebSocket endpoint~~ — dropped: the SSE `/api/chat` endpoint covers streaming, and an unauthenticated WebSocket endpoint can't be protected by CORS (see docs/audit).
-
-- [x] **AI Orchestration (`litellm`)**
-  - Create `/backend/llm_service.py` to route the AI requests using Litellm depending on the provider chosen by the user (OpenAI, Anthropic, Gemini).
-  - Port over the robust prompt-building logic entirely into the Vite client in `client/prompt/buildMessages.ts`, seamlessly formatting direct `OpenAI` format LLM structures.
-
-- [x] **Client Networking rewiring**
-  - Re-routed `TldrawAgent` payload transmission native to `http://localhost:8000/api/chat` dropping the Vite dev proxy entirely!
-
-- [ ] **End-to-End Testing**
-  - Conduct an end-to-end integration test by dropping a PDF onto the canvas, pointing the whiteboard context to it, and interacting with a live model context to have the spatial AI agent draw `EquationShape` blocks intelligently reviewing your input.
-
-## Future Steps (Step 5+)
-
-- [ ] **User Native Math Input via UI**
-  - We need to add the capability for the user to easily and natively write mathematical formulas on the board.
-  - *Idea 1*: Add an 'Equation Tool' to the `tldraw` toolbar. Clicking it places an empty `EquationShape` that the user can double-click to type raw LaTeX.
-  - *Idea 2*: Integrate a visual math keyboard (e.g. MathLive) that pops up when editing an `EquationShape` so users don't need to know raw LaTeX syntax.
-  - *Idea 3*: Support handwriting-to-math using a native draw-to-equation AI pass.
+- [ ] **End-to-end live-model test** — the loop has never been exercised
+      against a live provider end to end: drop a PDF, point the context at it,
+      and have the agent draw equation shapes reviewing it. (The audit PRs add
+      stubbed integration tests; this is the real-key complement, partially
+      covered by the per-provider smoke test required before the backend
+      hardening PR merges.)
+- [ ] **Deployment story** — no Dockerfile/compose; localhost two-terminal dev
+      only. Needs a decision on whether the relay is ever deployed shared
+      (which raises the open-relay and rate-limit-keying questions documented
+      in the audit).
+- [ ] **Model catalog** — `shared/models.ts` hardcodes five dated model ids
+      that will rot; add a custom-model-id field in the BYOK settings.
+- [ ] **Missing-key UX** — prompting without a key surfaces a raw 400 toast;
+      guard client-side and route to the settings modal instead.
+- [ ] **MathLive interactive click-through** — the 0.110 semver-major bump was
+      never manually QA'd through the equation-editing flow.
+- [ ] **Per-branch persistence keys + blob-backed PDF assets** — deferred from
+      the 08-02 audit; PDF pages are stored as data URLs inside snapshots.
+- [ ] **Handwriting-to-math** — draw-to-equation AI pass (the one genuinely
+      open idea from the original Step 5 list).
+- [ ] **LICENSE.md** — still says "Copyright (c) 2024 tldraw Inc."; needs a
+      conscious decision (dual attribution vs. project-owner line with a
+      retained tldraw notice).
