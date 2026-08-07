@@ -2,7 +2,6 @@ import { Box, BoxModel, JsonValue } from 'tldraw'
 import { BlurryShape } from '../format/BlurryShape'
 import { FocusedShape } from '../format/FocusedShape'
 import { PeripheralShapeCluster } from '../format/PeripheralShapesCluster'
-import { AgentModelName } from '../models'
 import type { AgentAction } from '../types/AgentAction'
 import { AgentCanvasLint } from '../types/AgentCanvasLint'
 import { AgentMessage, AgentMessageContent } from '../types/AgentMessage'
@@ -49,10 +48,6 @@ export interface MessagesPart {
 	requestSource: AgentRequest['source']
 }
 
-export interface ModelNamePart {
-	type: 'modelName'
-	modelName: AgentModelName
-}
 
 export interface PeripheralShapesPart {
 	type: 'peripheralShapes'
@@ -114,11 +109,6 @@ export interface ModePart {
 	actionTypes: AgentAction['_type'][]
 }
 
-export interface DebugPart {
-	type: 'debug'
-	logSystemPrompt: boolean
-	logMessages: boolean
-}
 
 // ============================================================================
 // Prompt Part Definitions
@@ -414,14 +404,6 @@ export const MessagesPartDefinition: PromptPartDefinition<MessagesPart> = {
 	},
 }
 
-// ModelName
-export const ModelNamePartDefinition: PromptPartDefinition<ModelNamePart> = {
-	type: 'modelName',
-	getModelName: (part) => {
-		return part.modelName
-	},
-}
-
 // PeripheralShapes
 export const PeripheralShapesPartDefinition: PromptPartDefinition<PeripheralShapesPart> = {
 	type: 'peripheralShapes',
@@ -531,14 +513,9 @@ export const AgentViewportBoundsPartDefinition: PromptPartDefinition<AgentViewpo
 	},
 }
 
-// Mode - sends mode metadata to worker for prompt construction
+// Mode - metadata used by the client's own prompt construction (system prompt
+// sections and the JSON schema are derived from it); not model-facing content
 export const ModePartDefinition: PromptPartDefinition<ModePart> = {
 	type: 'mode',
-	// No buildContent - this is metadata for the worker, not prompt content for the model
-}
-
-// Debug - sends debug flags to worker for logging
-export const DebugPartDefinition: PromptPartDefinition<DebugPart> = {
-	type: 'debug',
-	// No buildContent - this is metadata for the worker, not prompt content for the model
+	// No buildContent - metadata, not prompt content for the model
 }

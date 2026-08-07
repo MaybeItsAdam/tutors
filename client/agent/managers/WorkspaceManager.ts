@@ -138,24 +138,29 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		return this.restoreSnapshot(latest.branchId, latest.snapshot.id)
 	}
 
-	async loadState() {
+	/**
+	 * @returns Whether persisted state existed (used by boot to decide if a
+	 * legacy localStorage migration should apply).
+	 */
+	async loadState(): Promise<boolean> {
 		const persisted = await this.loadPersistedState()
 		if (!persisted) {
 			const workspace = this.createInitialWorkspace('Workspace 1')
 			this.$workspaces.set({ [workspace.id]: workspace })
 			this.$currentWorkspaceId.set(workspace.id)
 			this.persistState()
-			return
+			return false
 		}
 
 		this.$workspaces.set(persisted.workspaces)
 		this.$currentWorkspaceId.set(persisted.currentWorkspaceId)
 
 		const currentWorkspace = persisted.workspaces[persisted.currentWorkspaceId]
-		if (!currentWorkspace) return
+		if (!currentWorkspace) return true
 		const currentBranch = currentWorkspace.branches[currentWorkspace.currentBranchId]
-		if (!currentBranch) return
+		if (!currentBranch) return true
 		this.applyWorkspaceState(currentBranch.workingState)
+		return true
 	}
 
 	createWorkspace(name: string): Workspace {
@@ -180,10 +185,28 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		if (!branch) return false
 
 		this.captureCurrentBranchWorkingState()
+
+		// Prove the imported snapshot actually loads BEFORE persisting anything:
+		// the old order wrote the workspace to IndexedDB and switched to it
+		// first, so a snapshot that failed tldraw's validators left a corrupt
+		// workspace stored and selected.
+		const previousWorkspaceId = this.$currentWorkspaceId.get()
+		try {
+			this.applyWorkspaceState(branch.workingState)
+		} catch (e) {
+			console.error('Imported workspace failed to load; discarding it', e)
+			// Restore what was on the canvas before the attempt.
+			const previous = previousWorkspaceId ? this.$workspaces.get()[previousWorkspaceId] : undefined
+			const previousBranch = previous?.branches[previous.currentBranchId]
+			if (previousBranch) {
+				this.applyWorkspaceState(previousBranch.workingState)
+			}
+			return false
+		}
+
 		this.$workspaces.update((prev) => ({ ...prev, [workspace.id]: workspace }))
 		this.$currentWorkspaceId.set(workspace.id)
 		this.persistState()
-		this.applyWorkspaceState(branch.workingState)
 		return true
 	}
 
@@ -826,6 +849,12 @@ export class WorkspaceManager extends BaseAgentAppManager {
 		)
 		this.workingStateSaveTimer = window.setInterval(() => {
 			if (!this.isDirty) return
+			// Skip the tick while any agent is streaming: capturing clones the
+			// whole canvas + agent state, which is real main-thread work per
+			// chunk's dirty-marking. Stay dirty so the first quiet tick saves.
+			if (this.app.agents.getAgents().some((agent) => agent.requests.isGenerating())) {
+				return
+			}
 			// Cleared before capturing, so a change landing mid-save is still
 			// picked up by the next tick rather than being swallowed.
 			this.isDirty = false

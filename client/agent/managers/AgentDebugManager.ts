@@ -5,19 +5,16 @@ import type { TldrawAgent } from '../TldrawAgent'
 
 /**
  * Debug flags for controlling logging behavior.
+ *
+ * (logSystemPrompt/logMessages were removed: they were forwarded to a
+ * "worker side" that no longer exists - the backend receives only messages.)
  */
 export interface AgentDebugFlags {
-	/** Log the system prompt to the console (worker-side). */
-	logSystemPrompt: boolean
-	/** Log messages sent to the model (worker-side). */
-	logMessages: boolean
-	/** Log completed actions to the console (client-side). */
+	/** Log completed actions to the console. */
 	logCompletedActions: boolean
 }
 
 const DEFAULT_DEBUG_FLAGS: AgentDebugFlags = {
-	logSystemPrompt: false,
-	logMessages: false,
 	logCompletedActions: false,
 }
 

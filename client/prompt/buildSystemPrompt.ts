@@ -42,15 +42,27 @@ export function buildSystemPrompt(
 	return result
 }
 
+// The schema section is deterministic per action list and large, so it's
+// built once per (mode, actions) and cached. Compact JSON: pretty-printing
+// inflated it by roughly a third in tokens, re-billed on every request of
+// every continuation - this is the user's own key.
+const schemaSectionCache = new Map<string, string>()
+
 function buildSchemaPromptSection(modePart: ModePart) {
+	const cacheKey = `${modePart.modeType}|${modePart.actionTypes.join(',')}`
+	const cached = schemaSectionCache.get(cacheKey)
+	if (cached) return cached
+
 	const schema = buildResponseSchema(modePart.actionTypes)
 
-	return `## JSON schema
+	const section = `## JSON schema
 
 This is the JSON schema for the events you can return. You must conform to this schema.
 
-${JSON.stringify(schema, null, 2)}
+${JSON.stringify(schema)}
 `
+	schemaSectionCache.set(cacheKey, section)
+	return section
 }
 
 function normalizeNewlines(text: string): string {

@@ -26,14 +26,17 @@ export const CanvasLintsPartUtil = registerPromptPartUtil(
 					? agent.lints.getCreatedShapes()
 					: shapesInBounds
 
-			// Get unsurfaced lints and mark them as surfaced
-			const lints = agent.lints.getUnsurfacedLintsForShapes(shapesToCheck)
-			agent.lints.markLintsAsSurfaced(lints)
-
 			return {
 				type: 'canvasLints',
-				lints,
+				lints: agent.lints.getUnsurfacedLintsForShapes(shapesToCheck),
 			}
+		}
+
+		override commitPart(part: CanvasLintsPart): void {
+			// Marking at build time lost the lints on failed/cancelled requests
+			// - the model never saw them, but they'd never be surfaced again.
+			// The mark is key-based, so re-passing the same lint objects is safe.
+			this.agent.lints.markLintsAsSurfaced(part.lints)
 		}
 	}
 )

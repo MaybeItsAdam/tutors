@@ -1,4 +1,4 @@
-import { squashRecordDiffs } from 'tldraw'
+import { RecordsDiff, squashRecordDiffs, TLRecord } from 'tldraw'
 import {
 	convertTldrawIdToSimpleId,
 	convertTldrawShapeToFocusedShape,
@@ -14,12 +14,20 @@ export const UserActionHistoryPartUtil = registerPromptPartUtil(
 	class UserActionHistoryPartUtil extends PromptPartUtil<UserActionHistoryPart> {
 		static override type = 'userActionHistory' as const
 
+		/**
+		 * The exact diffs the latest getPart consumed. Committed (removed from
+		 * the tracker) only once the request succeeds - clearing at build time
+		 * permanently lost the user-edit context on failed or cancelled
+		 * requests. One request is in flight per agent at a time, and retries
+		 * re-run getPart, so overwriting the stash is correct.
+		 */
+		private consumedDiffs: RecordsDiff<TLRecord>[] = []
+
 		override getPart(_request: AgentRequest, helpers: AgentHelpers): UserActionHistoryPart {
 			const { editor, agent } = helpers
 
-			// Get the action history and clear it so that we can start tracking changes for the next request
 			const diffs = agent.userAction.getHistory()
-			agent.userAction.clearHistory()
+			this.consumedDiffs = diffs
 
 			const part: UserActionHistoryPart = {
 				type: 'userActionHistory',
@@ -71,6 +79,14 @@ export const UserActionHistoryPartUtil = registerPromptPartUtil(
 			}
 
 			return part
+		}
+
+		override commitPart(): void {
+			// Identity-based removal: edits the user made DURING the generation
+			// arrived after the stash was taken and must survive for the next
+			// prompt.
+			this.agent.userAction.removeConsumed(this.consumedDiffs)
+			this.consumedDiffs = []
 		}
 	}
 )

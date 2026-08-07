@@ -1,4 +1,3 @@
-import type { AgentModelName } from '../models'
 import type { AgentMessage } from './AgentMessage'
 import type { BasePromptPart } from './BasePromptPart'
 
@@ -31,11 +30,6 @@ export interface PromptPartDefinition<T extends BasePromptPart> {
 	 * Override the default buildMessages function to choose how to turn content into AgentMessages.
 	 */
 	buildMessages?(part: T): AgentMessage[]
-
-	/**
-	 * Override the default getModelName function to choose which model to use for the prompt part.
-	 */
-	getModelName?(part: T): AgentModelName | null
 }
 
 // ============================================================================

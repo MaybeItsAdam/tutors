@@ -66,9 +66,23 @@ export abstract class PromptPartUtil<T extends BasePromptPart = BasePromptPart> 
 
 	/**
 	 * Get some data to add to the prompt.
+	 *
+	 * Must be read-only: getPart runs at prompt-build time, BEFORE the request
+	 * has succeeded. Any state consumption (clearing histories, marking things
+	 * as surfaced) belongs in commitPart, or a failed/cancelled/retried
+	 * request permanently loses that state.
+	 *
 	 * @returns The prompt part.
 	 */
 	abstract getPart(request: AgentRequest, helpers: AgentHelpers): Promise<T> | T
+
+	/**
+	 * Commit any state consumption for a part. Called exactly once per
+	 * SUCCESSFUL request, with the part that getPart produced. Retries re-run
+	 * getPart, so implementations should commit based on what the part
+	 * actually carried.
+	 */
+	commitPart?(part: T, request: AgentRequest): void
 }
 
 export interface PromptPartUtilConstructor<T extends BasePromptPart = BasePromptPart> {

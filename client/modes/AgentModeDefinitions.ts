@@ -41,9 +41,7 @@ import { CanvasLintsPartUtil } from '../parts/CanvasLintsPartUtil'
 import { ChatHistoryPartUtil } from '../parts/ChatHistoryPartUtil'
 import { ContextItemsPartUtil } from '../parts/ContextItemsPartUtil'
 import { DataPartUtil } from '../parts/DataPartUtil'
-import { DebugPartUtil } from '../parts/DebugPartUtil'
 import { MessagesPartUtil } from '../parts/MessagesPartUtil'
-import { ModelNamePartUtil } from '../parts/ModelNamePartUtil'
 import { ModePartUtil } from '../parts/ModePartUtil'
 import { PeripheralShapesPartUtil } from '../parts/PeripheralShapesPartUtil'
 import { ScreenshotPartUtil } from '../parts/ScreenshotPartUtil'
@@ -100,14 +98,8 @@ export const AGENT_MODE_DEFINITIONS = [
 		 * Prompt parts determine what information will be sent to the model.
 		 */
 		parts: [
-			// Mode (sends metadata to worker)
+			// Mode (metadata driving system-prompt/schema construction)
 			ModePartUtil.type,
-
-			// Debug (sends debug flags to worker)
-			DebugPartUtil.type,
-
-			// Model
-			ModelNamePartUtil.type,
 
 			// Request
 			MessagesPartUtil.type,

@@ -1,10 +1,22 @@
-import * as pdfjs from 'pdfjs-dist'
+// pdfjs is only needed when a PDF is actually dropped/uploaded, so it loads
+// on demand - statically it was ~1MB of the initial bundle paid on first
+// paint of every session. Memoized so concurrent drops share one load.
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null
 
-// We use Vite's ?url to get the path to the worker script
-import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-
-// Set the worker source
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
+function loadPdfjs() {
+	if (!pdfjsPromise) {
+		pdfjsPromise = (async () => {
+			const [pdfjs, { default: workerUrl }] = await Promise.all([
+				import('pdfjs-dist'),
+				// Vite's ?url gives the path to the worker script
+				import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+			])
+			pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
+			return pdfjs
+		})()
+	}
+	return pdfjsPromise
+}
 
 export interface PdfPageData {
 	pageNumber: number
@@ -13,15 +25,30 @@ export interface PdfPageData {
 	dataUrl: string // data URL of the rendered page image
 }
 
+export interface PdfProcessOptions {
+	/** Called after each page finishes rendering. */
+	onProgress?: (done: number, total: number) => void
+}
+
+/** How many pages render concurrently. Unbounded parallelism meant a
+ * 100-page PDF held 100 live 2x-DPI canvases at once. */
+const PAGE_CONCURRENCY = 3
+
 export class PdfProcessor {
 	/**
 	 * Extracts all pages of a given PDF file into data URLs.
 	 * Data URLs (rather than blob: URLs) are required so the images survive
 	 * a page reload — asset records are persisted by tldraw and by workspace
 	 * snapshots, and blob: URLs die with the document that created them.
-	 * JPEG keeps the persisted size manageable. Pages render in parallel.
+	 * JPEG keeps the persisted size manageable.
+	 *
+	 * Pages render through a small concurrency pool; canvases are zeroed after
+	 * their data URL is taken so backing stores release immediately. Succeeds
+	 * if at least one page rendered, throwing only when nothing was usable -
+	 * per-page failures are counted and reported via the return's gaps.
 	 */
-	static async processFile(file: File): Promise<PdfPageData[]> {
+	static async processFile(file: File, opts: PdfProcessOptions = {}): Promise<PdfPageData[]> {
+		const pdfjs = await loadPdfjs()
 		const arrayBuffer = await file.arrayBuffer()
 		const pdf = await pdfjs.getDocument({
 			data: arrayBuffer,
@@ -45,24 +72,57 @@ export class PdfProcessor {
 			canvas.width = viewport.width
 			canvas.height = viewport.height
 
-			await page.render({ canvasContext: context, viewport }).promise
+			try {
+				await page.render({ canvasContext: context, viewport }).promise
+				const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
 
-			const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
-
-			return {
-				pageNumber: i,
-				width: viewport.width,
-				height: viewport.height,
-				dataUrl,
+				return {
+					pageNumber: i,
+					width: viewport.width,
+					height: viewport.height,
+					dataUrl,
+				}
+			} finally {
+				// Release the backing store now rather than at GC time.
+				canvas.width = 0
+				canvas.height = 0
 			}
 		}
 
-		// Render all pages in parallel
-		const pagePromises: Promise<PdfPageData>[] = []
-		for (let i = 1; i <= numPages; i++) {
-			pagePromises.push(renderPage(i))
+		// Worker pool: a few pages in flight at a time, results kept in order.
+		const results: (PdfPageData | null)[] = new Array(numPages).fill(null)
+		const errors: { page: number; error: unknown }[] = []
+		let nextPage = 1
+		let done = 0
+
+		const worker = async () => {
+			while (nextPage <= numPages) {
+				const i = nextPage++
+				try {
+					results[i - 1] = await renderPage(i)
+				} catch (error) {
+					errors.push({ page: i, error })
+				}
+				done++
+				opts.onProgress?.(done, numPages)
+			}
 		}
 
-		return Promise.all(pagePromises)
+		await Promise.all(
+			Array.from({ length: Math.min(PAGE_CONCURRENCY, numPages) }, () => worker())
+		)
+
+		const pages = results.filter((page): page is PdfPageData => page !== null)
+		if (pages.length === 0) {
+			throw new Error(
+				errors.length > 0
+					? `Could not render any pages of this PDF (${errors.length} failed).`
+					: 'This PDF has no pages.'
+			)
+		}
+		if (errors.length > 0) {
+			console.warn(`PDF import: ${errors.length}/${numPages} pages failed to render`, errors)
+		}
+		return pages
 	}
 }

@@ -86,7 +86,10 @@ export class AgentContextManager extends BaseAgentManager {
 	 * @param item The context item to remove.
 	 */
 	remove(item: ContextItem) {
-		this.$contextItems.update((items) => items.filter((v) => item !== v))
+		// Equality, not identity: add() stores a structuredClone, so a caller
+		// passing a re-derived item would never match by reference and the
+		// removal silently did nothing.
+		this.$contextItems.update((items) => items.filter((v) => !areContextItemsEqual(v, item)))
 	}
 
 	/**

@@ -3,16 +3,68 @@
  * Strips structural LaTeX syntax, extracts the RHS of definitions like f(x) = ...,
  * and converts common commands to mathjs equivalents.
  */
+
+/** Read a balanced `{...}` group starting at `start`. Returns the inner content and the index just past the closing brace. */
+function readBraceGroup(s: string, start: number): { content: string; end: number } | null {
+	if (s[start] !== '{') return null
+	let depth = 0
+	for (let i = start; i < s.length; i++) {
+		if (s[i] === '{') depth++
+		else if (s[i] === '}') {
+			depth--
+			if (depth === 0) return { content: s.slice(start + 1, i), end: i + 1 }
+		}
+	}
+	return null
+}
+
+/**
+ * Replace every `\frac{num}{den}` with `(num)/(den)` using balanced-brace
+ * matching, so nested fractions like `\frac{\frac{a}{b}}{c}` convert
+ * correctly to `((a)/(b))/(c)`.
+ */
+function convertFrac(input: string): string {
+	let out = input
+	let searchFrom = 0
+	for (;;) {
+		const idx = out.indexOf('\\frac', searchFrom)
+		if (idx === -1) break
+		const num = readBraceGroup(out, idx + '\\frac'.length)
+		const den = num ? readBraceGroup(out, num.end) : null
+		if (!num || !den) {
+			// Malformed \frac (missing braces) — skip past it untouched
+			searchFrom = idx + '\\frac'.length
+			continue
+		}
+		const replacement = `(${convertFrac(num.content)})/(${convertFrac(den.content)})`
+		out = out.slice(0, idx) + replacement + out.slice(den.end)
+		searchFrom = idx + replacement.length
+	}
+	return out
+}
+
+/**
+ * Shared LaTeX-command → mathjs replacement chain used by both latexToMathjs
+ * and matrixFromLatex. Handles \frac (brace-aware, nested), \sqrt, \pi,
+ * \cdot and \times. Callers layer their own extra rules on top.
+ */
+export function convertLatexCommands(fragment: string): string {
+	return convertFrac(fragment)
+		.replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)')
+		.replace(/\\sqrt/g, 'sqrt')
+		.replace(/\\pi/g, 'pi')
+		.replace(/\\cdot/g, '*')
+		.replace(/\\times/g, '*')
+}
+
 export function latexToMathjs(latex: string): string {
 	let expr = latex
 		// \left( → (   \right) → )   \left[ → [   etc.
 		.replace(/\\left\s*([([{|])/g, '$1')
 		.replace(/\\right\s*([)\]|}|])/g, '$1')
+
+	expr = convertLatexCommands(expr)
 		// Common commands
-		.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
-		.replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)')
-		.replace(/\\sqrt/g, 'sqrt')
-		.replace(/\\pi/g, 'pi')
 		.replace(/\\infty/g, 'Infinity')
 		.replace(/\\sin/g, 'sin').replace(/\\cos/g, 'cos')
 		.replace(/\\tan/g, 'tan').replace(/\\ln/g, 'log')
