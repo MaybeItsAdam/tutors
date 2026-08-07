@@ -62,10 +62,12 @@ export default defineConfig(({ mode }) => {
 					// three/pdfjs/mathlive are deliberately NOT listed: they're
 					// reached only via dynamic import() and listing them here
 					// would hoist them back into the eager graph.
-					manualChunks: {
-						tldraw: ['tldraw'],
-						mathjs: ['mathjs'],
-						katex: ['katex'],
+					advancedChunks: {
+						groups: [
+							{ name: 'tldraw', test: /node_modules[\\/]@?tldraw[\\/]/ },
+							{ name: 'mathjs', test: /node_modules[\\/]mathjs[\\/]/ },
+							{ name: 'katex', test: /node_modules[\\/]katex[\\/]/ },
+						],
 					},
 				},
 			},
