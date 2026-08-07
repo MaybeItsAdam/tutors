@@ -15,6 +15,7 @@ import {
 import { ChatHistory } from '../chat-history/ChatHistory'
 import { TodoList } from '../TodoList'
 import { BYOKSettings } from '../byok/BYOKSettings'
+import { UsageMeter } from '../UsageMeter'
 import { usePortalTarget } from './PanelLayoutContext'
 
 const CHAT_WIDTH = 340
@@ -166,6 +167,7 @@ function TranscriptPanel({
 					New chat
 				</button>
 				<div style={{ flex: 1 }} />
+				<UsageMeter agent={agent} />
 				<span onPointerDown={(e) => e.stopPropagation()}>
 					<BYOKSettings />
 				</span>

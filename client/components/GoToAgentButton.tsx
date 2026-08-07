@@ -46,7 +46,7 @@ export function GoToAgentButton({ agent }: { agent: TldrawAgent }) {
 
 			return !Box.FromPoints(agentViewportScreenCorners).collides(screenBounds)
 		},
-		[agentViewport]
+		[agentViewport, editor]
 	)
 
 	// The button's arrow points towards the agent
@@ -54,7 +54,9 @@ export function GoToAgentButton({ agent }: { agent: TldrawAgent }) {
 		'angleToAgent',
 		() => {
 			if (!agentViewport) return
-			if (agentIsOffscreen) return
+			// The button only renders when the agent is offscreen, so that's the
+			// only case where the arrow needs an angle.
+			if (!agentIsOffscreen) return
 
 			const agentCenter = Box.From(agentViewport).center
 			const agentScreenCenter = editor.pageToViewport(agentCenter)
@@ -63,7 +65,7 @@ export function GoToAgentButton({ agent }: { agent: TldrawAgent }) {
 			const displacement = Vec.From(agentScreenCenter).sub(screenCenter)
 			return Math.atan2(displacement.y, displacement.x) * (180 / Math.PI)
 		},
-		[agentViewport]
+		[agentViewport, agentIsOffscreen, editor]
 	)
 
 	const handleClick = useCallback(() => {

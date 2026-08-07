@@ -7,10 +7,10 @@ dist
 .npm-cache
 .tsbuild
 
-# Python backend
-backend/__pycache__
+# Python
+__pycache__/
+*.py[cod]
 backend/.venv
-backend/*.pyc
 
 # IDE
 .idea

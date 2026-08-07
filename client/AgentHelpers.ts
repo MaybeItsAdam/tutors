@@ -262,7 +262,9 @@ export class AgentHelpers {
 		// todo: remove default and have a better handling of cases where id is undefined
 
 		const { editor } = this.agent
+
 		// Defensively strip the prefix in case the model incorrectly includes it
+		id = id.replace(/^shape:/, '') as SimpleShapeId
 
 		// Ensure the id is unique by incrementing a number at the end
 		let newId = id

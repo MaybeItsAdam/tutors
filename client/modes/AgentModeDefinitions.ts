@@ -1,5 +1,6 @@
 import type { AgentAction } from '../../shared/types/AgentAction'
 import type { PromptPart } from '../../shared/types/PromptPart'
+import { assertModeDefinitions } from './assertModeDefinitions'
 
 // Import action utils to ensure they register themselves
 import { AddDetailActionUtil } from '../actions/AddDetailActionUtil'
@@ -199,3 +200,7 @@ export function getAgentModeDefinition(type: AgentModeType): AgentModeDefinition
 	if (!mode) throw new Error(`Unknown agent mode: ${type}`)
 	return mode
 }
+
+// All util imports above are hoisted, so every registerActionUtil /
+// registerPromptPartUtil call has run by the time this executes.
+assertModeDefinitions(AGENT_MODE_DEFINITIONS)

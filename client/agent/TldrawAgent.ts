@@ -1,7 +1,7 @@
 import { Editor, RecordsDiff, reverseRecordsDiff, structuredClone, TLRecord } from 'tldraw'
 import { convertTldrawShapeToFocusedShape } from '../../shared/format/convertTldrawShapeToFocusedShape'
 import { AgentModelName, AGENT_MODEL_DEFINITIONS } from '../../shared/models'
-import { AgentAction, getActionSchemaForMode } from '../../shared/types/AgentAction'
+import { AgentAction, getActionSchema } from '../../shared/types/AgentAction'
 import { AgentInput } from '../../shared/types/AgentInput'
 import { AgentPrompt, BaseAgentPrompt } from '../../shared/types/AgentPrompt'
 import { AgentRequest } from '../../shared/types/AgentRequest'
@@ -705,7 +705,7 @@ export class TldrawAgent {
 								// actions are inherently incomplete so are only validated once
 								// the model has finished streaming them.
 								if (action.complete) {
-									const schema = getActionSchemaForMode(action._type, modeType)
+									const schema = getActionSchema(action._type)
 									if (schema && !schema.safeParse(action).success) {
 										console.warn('Skipping action that failed schema validation:', action)
 										return

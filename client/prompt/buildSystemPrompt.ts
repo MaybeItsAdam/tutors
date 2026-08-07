@@ -43,7 +43,7 @@ export function buildSystemPrompt(
 }
 
 function buildSchemaPromptSection(modePart: ModePart) {
-	const schema = buildResponseSchema(modePart.actionTypes, modePart.modeType)
+	const schema = buildResponseSchema(modePart.actionTypes)
 
 	return `## JSON schema
 
