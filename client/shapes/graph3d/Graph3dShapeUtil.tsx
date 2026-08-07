@@ -58,8 +58,10 @@ export class Graph3dShapeUtil extends BaseBoxShapeUtil<IGraph3dShape> {
 		)
 	}
 
-	override indicator(shape: IGraph3dShape) {
-		return <rect width={shape.props.w} height={shape.props.h} rx={6} />
+	override getIndicatorPath(shape: IGraph3dShape): Path2D {
+		const path = new Path2D()
+		path.roundRect(0, 0, shape.props.w, shape.props.h, 6)
+		return path
 	}
 
 	override onResize = (shape: IGraph3dShape, info: any) => {

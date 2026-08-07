@@ -62,8 +62,10 @@ export class PdfDocumentShapeUtil extends BaseBoxShapeUtil<IPdfDocumentShape> {
 		return <PdfDocumentComponent shape={shape} />
 	}
 
-	override indicator(shape: IPdfDocumentShape) {
-		return <rect width={shape.props.w} height={shape.props.h} rx={8} />
+	override getIndicatorPath(shape: IPdfDocumentShape): Path2D {
+		const path = new Path2D()
+		path.roundRect(0, 0, shape.props.w, shape.props.h, 8)
+		return path
 	}
 	
 	override onResize = (shape: IPdfDocumentShape, info: any) => {

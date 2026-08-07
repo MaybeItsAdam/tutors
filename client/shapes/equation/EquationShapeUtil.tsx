@@ -106,8 +106,10 @@ export class EquationShapeUtil extends BaseBoxShapeUtil<IEquationShape> {
 		return <EquationDisplay shape={shape} editor={this.editor} />
 	}
 
-	override indicator(shape: IEquationShape) {
-		return <rect width={shape.props.w} height={shape.props.h} />
+	override getIndicatorPath(shape: IEquationShape): Path2D {
+		const path = new Path2D()
+		path.rect(0, 0, shape.props.w, shape.props.h)
+		return path
 	}
 
 	override onResize = (shape: IEquationShape, info: any) => {

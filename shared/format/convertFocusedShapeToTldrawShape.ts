@@ -2,7 +2,6 @@ import {
 	Box,
 	createShapeId,
 	Editor,
-	FONT_SIZES,
 	IndexKey,
 	reverseRecordsDiff,
 	TLArrowShape,
@@ -22,7 +21,7 @@ import {
 } from 'tldraw'
 import { asColor } from './FocusedColor'
 import { convertFocusedFillToTldrawFill } from './FocusedFill'
-import { convertFocusedFontSizeToTldrawFontSizeAndScale } from './FocusedFontSize'
+import { convertFocusedFontSizeToTldrawFontSizeAndScale, FONT_SIZES } from './FocusedFontSize'
 import { FocusedGeoShapeType } from './FocusedGeoShapeType'
 import {
 	FocusedArrowShape,
@@ -564,6 +563,7 @@ function convertNoteShapeToTldrawShape(
 				scale: defaultNoteShape.props?.scale ?? 1,
 				url: defaultNoteShape.props?.url ?? '',
 				verticalAlign: defaultNoteShape.props?.verticalAlign ?? 'middle',
+				textLastEditedBy: defaultNoteShape.props?.textLastEditedBy ?? null,
 			},
 			meta: {
 				note: focusedShape.note ?? defaultNoteShape.meta?.note ?? '',

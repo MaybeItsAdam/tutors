@@ -366,8 +366,10 @@ export class VectorFieldShapeUtil extends BaseBoxShapeUtil<IVectorFieldShape> {
 		)
 	}
 
-	override indicator(shape: IVectorFieldShape) {
-		return <rect width={shape.props.w} height={shape.props.h} />
+	override getIndicatorPath(shape: IVectorFieldShape): Path2D {
+		const path = new Path2D()
+		path.rect(0, 0, shape.props.w, shape.props.h)
+		return path
 	}
 
 	override onResize = (shape: IVectorFieldShape, info: any) => {

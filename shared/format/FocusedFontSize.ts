@@ -1,5 +1,18 @@
-import { FONT_SIZES } from 'tldraw'
 import { z } from 'zod'
+
+/**
+ * Pixel sizes of tldraw's text size styles at the default theme font size
+ * (16px). tldraw 5 removed the FONT_SIZES export in favour of theme-relative
+ * display values (s: 1.125, m: 1.5, l: 2.25, xl: 2.75 × theme.fontSize); we
+ * pin the default-theme pixel values here since focused font sizes are
+ * expressed in absolute pixels.
+ */
+export const FONT_SIZES = {
+	s: 18,
+	m: 24,
+	l: 36,
+	xl: 44,
+} as const
 
 export const FocusedFontSize = z.number()
 
