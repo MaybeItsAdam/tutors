@@ -1,9 +1,9 @@
-import { evaluate } from 'mathjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { HTMLContainer, Rectangle2d, ShapeUtil, useValue } from 'tldraw'
 import { IEquationShape } from '../equation/EquationShape'
 import { graphShapeProps, IGraphShape } from './GraphShape'
 import { latexToMathjsLines } from '../../utils/latexToMathjs'
+import { evaluateExpr } from '../../utils/mathCompile'
 import {
 	matrixFromLatex,
 	eigen2,
@@ -77,7 +77,10 @@ function createExpressionEvaluator(sliders: GraphSlider[]) {
 	const scope = expressionScope(sliders)
 	return (expr: string, x: number) => {
 		scope.x = x
-		return evaluate(expr, scope)
+		// Compile-once: evaluate(expr, scope) re-parses the string per call,
+		// and this runs 401 times per curve per render plus the whole
+		// intersection search - thousands of parses per render otherwise.
+		return evaluateExpr(expr, scope) as number
 	}
 }
 
@@ -597,7 +600,15 @@ function GraphRenderer({
 	const { w, h, functionStr, xMin, xMax, yMin, yMax, color, strokeWidth } = shape.props
 	const sliders = shape.props.sliders ?? []
 	const [editStr, setEditStr] = useState(functionStr)
+	// Keep the edit buffer in sync with the prop: it's captured once at mount,
+	// so if the agent (or a slider merge) changes functionStr afterwards,
+	// opening edit and pressing Enter would silently write the stale value
+	// back, reverting the change. (Graph3dShapeUtil already does this.)
+	useEffect(() => {
+		setEditStr(functionStr)
+	}, [functionStr])
 	const inputRef = useRef<HTMLInputElement>(null)
+	const sliderMarkRef = useRef<string | null>(null)
 
 	const toSvgX = (x: number) => ((x - xMin) / (xMax - xMin)) * w
 	const toSvgY = (y: number) => h - ((y - yMin) / (yMax - yMin)) * h
@@ -650,10 +661,15 @@ function GraphRenderer({
 	}, [editor, shape.id])
 
 	// If there are bound equations, use those. Otherwise fall back to the shape's own functionStr.
-	const functionsToPlot: { expr: string; label: string; color: string }[] =
-		boundFunctions.length > 0
-			? boundFunctions.map((f, i) => ({ ...f, color: CURVE_COLORS[i % CURVE_COLORS.length] }))
-			: [{ expr: functionStr, label: functionStr, color }]
+	// Memoized: a fresh array every render made every downstream useMemo dep
+	// dead, so the expensive intersection search reran on every render.
+	const functionsToPlot: { expr: string; label: string; color: string }[] = useMemo(
+		() =>
+			boundFunctions.length > 0
+				? boundFunctions.map((f, i) => ({ ...f, color: CURVE_COLORS[i % CURVE_COLORS.length] }))
+				: [{ expr: functionStr, label: functionStr, color }],
+		[boundFunctions, functionStr, color]
+	)
 
 	const expectedSliders = useMemo(
 		() => mergeSliders(functionsToPlot.map((fn) => fn.expr), sliders),
@@ -673,6 +689,15 @@ function GraphRenderer({
 	const intersections = useMemo(
 		() => findIntersections(functionsToPlot, sliders, xMin, xMax),
 		[functionsToPlot, sliders, xMin, xMax]
+	)
+
+	// Sample the curves once per relevant input, not once per render.
+	const curvePaths = useMemo(
+		() =>
+			functionsToPlot.map((fn) =>
+				buildPath(fn.expr, evaluateExpression, xMin, xMax, yMin, yMax, w, h)
+			),
+		[functionsToPlot, evaluateExpression, xMin, xMax, yMin, yMax, w, h]
 	)
 
 	const handleInputKeyDown = (e: React.KeyboardEvent) => {
@@ -743,7 +768,7 @@ function GraphRenderer({
 				{!boundMatrix && functionsToPlot.map((fn, i) => (
 					<path
 						key={i}
-						d={buildPath(fn.expr, evaluateExpression, xMin, xMax, yMin, yMax, w, h)}
+						d={curvePaths[i]}
 						fill="none"
 						stroke={fn.color}
 						strokeWidth={strokeWidth}
@@ -867,8 +892,8 @@ function GraphRenderer({
 					<span style={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: 13, flexShrink: 0 }}>y =</span>
 					<input
 						ref={inputRef}
+						value={editStr}
 						autoFocus
-						defaultValue={functionStr}
 						onChange={(e) => setEditStr(e.target.value)}
 						onKeyDown={handleInputKeyDown}
 						placeholder="sin(x), x^2, exp(-x^2)…"
@@ -915,7 +940,25 @@ function GraphRenderer({
 								max={slider.max}
 								step={slider.step}
 								value={slider.value}
-								onPointerDown={(e) => e.stopPropagation()}
+								aria-label={`Slider for ${slider.name}`}
+								onPointerDown={(e) => {
+									e.stopPropagation()
+									// One undo step per drag, not one per tick: mark here,
+									// squash everything since the mark on release.
+									sliderMarkRef.current = editor.markHistoryStoppingPoint('graph-slider')
+								}}
+								onPointerUp={() => {
+									if (sliderMarkRef.current) {
+										editor.squashToMark(sliderMarkRef.current)
+										sliderMarkRef.current = null
+									}
+								}}
+								onLostPointerCapture={() => {
+									if (sliderMarkRef.current) {
+										editor.squashToMark(sliderMarkRef.current)
+										sliderMarkRef.current = null
+									}
+								}}
 								onChange={(e) => {
 									const value = Number(e.target.value)
 									editor.updateShape({

@@ -7,10 +7,10 @@ import {
 } from 'tldraw'
 import { equationShapeProps, IEquationShape } from './EquationShape'
 import { latexToMathjsLines } from '../../utils/latexToMathjs'
-import { evaluate } from 'mathjs'
+import { evaluateExpr } from '../../utils/mathCompile'
 
 import 'mathlive'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 // ── Variable extraction from a latex equation ─────────────────────────────────
 /**
@@ -22,7 +22,7 @@ function extractScope(latex: string, scope: Record<string, number>) {
 	const lines = latexToMathjsLines(latex)
 	for (const line of lines) {
 		try {
-			const result = evaluate(line, scope)
+			const result = evaluateExpr(line, scope)
 			// If the expression is an assignment (a = 3.14), mathjs already
 			// wrote it to scope. Also handle bare numbers (the whole equation evaluates).
 			if (typeof result === 'number' && isFinite(result)) {
@@ -49,7 +49,7 @@ function evaluateWithScope(latex: string, scope: Record<string, number>): number
 	let last: number | null = null
 	for (const line of lines) {
 		try {
-			const r = evaluate(line, { ...scope })
+			const r = evaluateExpr(line, { ...scope })
 			if (typeof r === 'number' && isFinite(r)) last = r
 		} catch {
 			// ignore
@@ -141,29 +141,33 @@ function EquationDisplay({ shape, editor }: { shape: IEquationShape; editor: any
 	const { latex, fontSize } = shape.props
 	const hasScope = Object.keys(boundScope).length > 0
 
-	// Evaluate this equation with the bound scope (if any)
-	const result = hasScope ? evaluateWithScope(latex, boundScope) : null
+	// boundScope is referentially fresh per store tick, so memo on a stable
+	// serialization of it (scopes are tiny).
+	const scopeKey = JSON.stringify(boundScope)
 
-	// Build the display latex — if we have a result, show "original = value"
-	const normalizeForDisplay = (raw: string) =>
-		raw.replace(
+	// Equations are the most common shape on a tutoring board, and KaTeX
+	// rendering + mathjs evaluation used to run in the render body on every
+	// store tick (selection changes included). Memoize on the actual inputs.
+	const mainHtml = useMemo(() => {
+		// Build the display latex — if we have a result, show "original = value"
+		const normalized = latex.replace(
 			/^\\displaylines\{([\s\S]*)\}$/,
 			(_, body) => `\\begin{aligned}${body}\\end{aligned}`
 		)
-
-	let mainHtml: string
-	try {
-		mainHtml = katex.renderToString(normalizeForDisplay(latex), {
-			displayMode: true,
-			throwOnError: false,
-		})
-	} catch {
-		mainHtml = `<div style="color:red">Error rendering LaTeX</div>`
-	}
+		try {
+			return katex.renderToString(normalized, {
+				displayMode: true,
+				throwOnError: false,
+			})
+		} catch {
+			return `<div style="color:red">Error rendering LaTeX</div>`
+		}
+	}, [latex])
 
 	// Substitution annotation: "a=3, b=5 → result"
-	let subHtml = ''
-	if (hasScope) {
+	const subHtml = useMemo(() => {
+		if (!hasScope) return ''
+		const result = evaluateWithScope(latex, boundScope)
 		const substitutions = Object.entries(boundScope)
 			.map(([k, v]) => `${k} = ${+v.toFixed(4)}`)
 			.join(',\\;')
@@ -172,11 +176,12 @@ function EquationDisplay({ shape, editor }: { shape: IEquationShape; editor: any
 				? `\\small\\color{gray}{${substitutions} \\Rightarrow ${+result.toFixed(6)}}`
 				: `\\small\\color{gray}{${substitutions}}`
 		try {
-			subHtml = katex.renderToString(subLatex, { displayMode: false, throwOnError: false })
+			return katex.renderToString(subLatex, { displayMode: false, throwOnError: false })
 		} catch {
-			subHtml = ''
+			return ''
 		}
-	}
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey stands in for boundScope
+	}, [latex, hasScope, scopeKey])
 
 	return (
 		<HTMLContainer
@@ -226,8 +231,12 @@ function MathLiveEditor({ shape, editor }: { shape: IEquationShape; editor: any 
 		// Initialise with the shape's current LaTeX
 		mf.value = shape.props.latex
 
+		// One undo step per editing session, not one per keystroke: mark when
+		// editing starts, squash everything since the mark when it ends.
+		const editMark = editor.markHistoryStoppingPoint('equation-edit')
+
 		// Auto-focus after mount
-		setTimeout(() => mf.focus(), 10)
+		const focusTimer = setTimeout(() => mf.focus(), 10)
 
 		// ── Sync LaTeX + auto-resize height on every input ──
 		const handleInput = (ev: Event) => {
@@ -277,9 +286,11 @@ function MathLiveEditor({ shape, editor }: { shape: IEquationShape; editor: any 
 		mf.addEventListener('keydown', handleKeyDown)
 
 		return () => {
+			clearTimeout(focusTimer)
 			mf.removeEventListener('input', handleInput)
 			mf.removeEventListener('keydown', handleKeyDown)
 			ro.disconnect()
+			editor.squashToMark(editMark)
 			if (window.mathVirtualKeyboard) {
 				window.mathVirtualKeyboard.hide()
 			}
