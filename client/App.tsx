@@ -4,7 +4,6 @@ import {
 	DefaultToolbar,
 	TLComponents,
 	Tldraw,
-	TldrawOverlays,
 	TldrawUiMenuToolItem,
 	TldrawUiToastsProvider,
 	TLUiOverrides,
@@ -743,7 +742,7 @@ function App() {
 		}
 	}, [movePinnedCoreToolToIndex, movePinnedToolToIndex, pinnedCoreToolIds, pinnedToolIds, uiView])
 
-	// tldraw components — StylePanel is null because we render our own draggable version in Overlays
+	// tldraw components — StylePanel is null because we render our own draggable version in InFrontOfTheCanvas
 	const components: TLComponents = useMemo(() => {
 		return {
 			StylePanel: null,
@@ -761,9 +760,8 @@ function App() {
 						<CustomHelperButtons />
 					</TldrawAgentAppContextProvider>
 				),
-			Overlays: () => (
+			InFrontOfTheCanvas: () => (
 				<>
-					<TldrawOverlays />
 					<PlotGraphButton />
 					<LayoutAwareStylePanel />
 					<Graph3dGimbalPanel />

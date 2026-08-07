@@ -309,8 +309,10 @@ export class GraphShapeUtil extends ShapeUtil<IGraphShape> {
 		)
 	}
 
-	override indicator(shape: IGraphShape) {
-		return <rect width={shape.props.w} height={shape.props.h} />
+	override getIndicatorPath(shape: IGraphShape): Path2D {
+		const path = new Path2D()
+		path.rect(0, 0, shape.props.w, shape.props.h)
+		return path
 	}
 
 	override onResize = (shape: IGraphShape, info: any) => {

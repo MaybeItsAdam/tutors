@@ -427,8 +427,10 @@ export class ComplexPlaneShapeUtil extends BaseBoxShapeUtil<IComplexPlaneShape> 
 		)
 	}
 
-	override indicator(shape: IComplexPlaneShape) {
-		return <rect width={shape.props.w} height={shape.props.h} />
+	override getIndicatorPath(shape: IComplexPlaneShape): Path2D {
+		const path = new Path2D()
+		path.rect(0, 0, shape.props.w, shape.props.h)
+		return path
 	}
 
 	override onResize = (shape: IComplexPlaneShape, info: any) => {
