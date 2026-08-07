@@ -2,6 +2,8 @@ import {
 	createContext,
 	useCallback,
 	useContext,
+	useEffect,
+	useLayoutEffect,
 	useRef,
 	useState,
 	useSyncExternalStore,
@@ -65,7 +67,12 @@ const PortalTargetCtx = createContext<HTMLDivElement | null>(null)
 export function PanelLayoutProvider({ children }: { children: ReactNode }) {
 	const storeRef = useRef<DockStore | null>(null)
 	if (!storeRef.current) storeRef.current = createDockStore()
-	const [portalTarget] = useState<HTMLDivElement>(() => {
+
+	// The portal div is created in an effect, not a state initializer: React
+	// runs initializers twice under StrictMode, which appended an orphaned
+	// duplicate div to <body>, and nothing ever removed the div on unmount.
+	const [portalTarget, setPortalTarget] = useState<HTMLDivElement | null>(null)
+	useEffect(() => {
 		const el = document.createElement('div')
 		el.style.position = 'fixed'
 		el.style.inset = '0'
@@ -73,8 +80,12 @@ export function PanelLayoutProvider({ children }: { children: ReactNode }) {
 		el.style.zIndex = '350'
 		el.id = 'panel-portal-target'
 		document.body.appendChild(el)
-		return el
-	})
+		setPortalTarget(el)
+		return () => {
+			el.remove()
+			setPortalTarget(null)
+		}
+	}, [])
 
 	return (
 		<DockCtx.Provider value={storeRef.current}>
@@ -229,12 +240,16 @@ export function useBottomPanel({ id, width, defaultSide }: BottomPanelOptions) {
 		[store, id, width]
 	)
 
-	// Ensure registered on first render
-	const didRegister = useRef(false)
-	if (!didRegister.current) {
-		store.set(id, { width, visible: true, side: defaultSide })
-		didRegister.current = true
-	}
+	// Register in an effect, not during render (render-phase side effects run
+	// twice under StrictMode), and UNregister on unmount - unmounted panels
+	// used to keep reserving dock width forever.
+	useLayoutEffect(() => {
+		store.set(id, { width, visible: true, side: sideRef.current })
+		return () => {
+			store.remove(id)
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- width changes are handled by setVisible/setSide callers
+	}, [store, id])
 
 	const setSide = useCallback(
 		(s: DockSide) => {

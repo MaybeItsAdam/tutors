@@ -1,4 +1,5 @@
 import { evaluate } from 'mathjs'
+import { convertLatexCommands } from './latexToMathjs'
 
 /**
  * Parse a LaTeX matrix environment into a number[][].
@@ -21,13 +22,7 @@ export function matrixFromLatex(latex: string): number[][] | null {
 		const values: number[] = []
 		for (const cell of cells) {
 			// Convert common LaTeX to mathjs
-			const expr = cell
-				.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
-				.replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)')
-				.replace(/\\sqrt/g, 'sqrt')
-				.replace(/\\pi/g, 'pi')
-				.replace(/\\cdot/g, '*')
-				.replace(/\\times/g, '*')
+			const expr = convertLatexCommands(cell)
 				.replace(/[{}]/g, '')
 				.replace(/\\/g, '')
 				.trim()

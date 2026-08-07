@@ -288,6 +288,7 @@ function VectorFieldRenderer({
 					<input
 						ref={inputRef}
 						autoFocus
+						aria-label="Vector field expression (P, Q)"
 						defaultValue={expression}
 						onChange={(e) => setEditExpr(e.target.value)}
 						onKeyDown={handleKeyDown}

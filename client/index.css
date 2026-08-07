@@ -383,6 +383,54 @@ body {
 	border-style: solid;
 }
 
+.workspace-landing-card-wrap {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+
+.workspace-landing-card-wrap .workspace-landing-card {
+	flex: 1;
+}
+
+.workspace-landing-export-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	border: 1px solid #e5e7eb;
+	background: #ffffff;
+	color: #6b7280;
+	border-radius: 6px;
+	font-size: 11px;
+	padding: 2px 8px;
+	cursor: pointer;
+}
+
+.workspace-landing-export-btn:hover {
+	background: #f9fafb;
+	color: #111827;
+}
+
+.workspace-landing-import-btn {
+	border: 1px solid #d1d5db;
+	background: #ffffff;
+	color: #111827;
+	border-radius: 6px;
+	padding: 8px 12px;
+	cursor: pointer;
+	font-size: 13px;
+}
+
+.workspace-landing-import-btn:hover {
+	background: #f9fafb;
+}
+
+.workspace-landing-status {
+	margin: -6px 0 12px;
+	font-size: 12px;
+	color: #6b7280;
+}
+
 /* ── Snapshot Timeline Canvas (stc) ────────────────────────────────────────── */
 
 .stc-screen {
@@ -1024,14 +1072,6 @@ body {
 	background: transparent;
 }
 
-.chat-panel * {
-	user-select: text;
-}
-
-.chat-panel button {
-	user-select: none;
-}
-
 .chat-header {
 	display: flex;
 	justify-content: flex-end;
@@ -1067,14 +1107,6 @@ body {
 
 .new-chat-button:hover {
 	background-color: var(--tl-color-muted-2);
-}
-
-.workspace-panel {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	padding: 0 12px 8px;
-	border-bottom: 1px solid var(--tl-color-muted-1);
 }
 
 .workspace-row {
@@ -1191,125 +1223,6 @@ body {
 .workspace-snapshot-actions {
 	display: flex;
 	gap: 4px;
-}
-
-/* Chat Input */
-.chat-input-container {
-	display: flex;
-	flex-direction: column;
-	position: relative;
-}
-
-.chat-input {
-	padding: 0px 8px 8px 8px;
-	flex-shrink: 0;
-	position: sticky;
-	bottom: 0;
-	border-radius: 12px;
-	margin: 0px 8px 8px 8px;
-	padding: 0px;
-	background-color: var(--tl-color-panel);
-	z-index: 999999;
-}
-
-.chat-input form {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	padding: 8px;
-	border-radius: 12px;
-	color: var(--tl-color-text-2);
-	background-color: var(--tl-color-muted-1);
-	box-shadow: var(--tl-shadow-1);
-	font-size: 11px;
-}
-
-.chat-input input[type='text'] {
-	flex: 1;
-	padding: 8px 0px;
-	margin-bottom: 4px;
-	border: none;
-	background-color: transparent;
-	color: var(--tl-color-text);
-	border-radius: 4px;
-	font-size: 12px;
-	outline: none;
-	width: 100%;
-}
-
-.chat-input input[type='text']::placeholder {
-	color: var(--tl-color-text-3);
-}
-
-.chat-input input[type='text']:focus {
-	border-color: var(--tl-color-primary);
-}
-
-.chat-input textarea {
-	flex: 1;
-	padding: 8px 0px;
-	margin-bottom: 4px;
-	border: none;
-	background-color: transparent;
-	color: var(--tl-color-text);
-	font-family: sans-serif;
-	border-radius: 4px;
-	font-size: 12px;
-	outline: none;
-	width: 100%;
-	resize: none;
-	scrollbar-color: var(--tl-color-text-3) transparent;
-}
-
-.chat-input textarea::placeholder {
-	color: var(--tl-color-text-3);
-}
-
-.chat-input textarea:focus {
-	border-color: var(--tl-color-primary);
-}
-
-.chat-input textarea::-webkit-scrollbar {
-	width: 8px;
-	background: transparent;
-}
-
-.chat-input textarea::-webkit-scrollbar-track {
-	background: transparent;
-}
-
-.chat-input textarea::-webkit-scrollbar-thumb {
-	background: var(--tl-color-text-3);
-	border-radius: 4px;
-}
-
-.chat-input-submit {
-	width: 16px;
-	height: 16px;
-	align-self: flex-end;
-	background: var(--tl-color-primary);
-	box-shadow: var(--tl-shadow-1);
-	color: var(--tl-color-panel-contrast);
-	appearance: none;
-	border: 0;
-	border-radius: 4px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	cursor: pointer;
-	font-size: 10px;
-	text-align: center;
-	font-weight: 500;
-	border-radius: 100%;
-}
-
-.chat-input-submit:hover {
-	background: var(--tl-color-primary-hover);
-}
-
-.chat-input-submit:disabled {
-	background: var(--tl-color-grid);
-	cursor: not-allowed;
 }
 
 .chat-actions {
@@ -1756,33 +1669,6 @@ button.prompt-tag span {
 		drop-shadow(calc(var(--tl-scale) * -1px) calc(var(--tl-scale) * 1px) 0px rgba(0, 100, 255, 50%));
 }
 
-/* Chat History Fallback */
-
-.chat-fallback {
-	padding: 10px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-direction: column;
-	color: var(--tl-color-text-2);
-	user-select: none;
-	font-size: 14px;
-}
-
-.chat-fallback button {
-	background-color: hsl(214, 84%, 50%);
-	color: white;
-	border: none;
-	border-radius: 4px;
-	padding: 6px 12px;
-	font-weight: 500;
-	cursor: pointer;
-}
-
-.chat-fallback button:hover {
-	background-color: hsl(214, 84%, 40%);
-}
-
 /* Context Highlights */
 /* Uses --tl-scale (1/zoom) to keep visual size constant at different zoom levels */
 
@@ -2020,4 +1906,22 @@ button.prompt-tag span {
 
 .workspace-share-status {
 	padding-left: 64px;
+}
+
+/* ── A11y: focus visibility & reduced motion ─────────────────────────────────── */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible {
+	outline: 2px solid #60a5fa;
+	outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.minimized-generating-dot,
+	.context-highlight-generating line,
+	.context-highlight-generating circle {
+		animation: none;
+	}
 }

@@ -48,14 +48,19 @@ import {
 	PDF_SHAPE_DEFAULT_H,
 	PDF_SHAPE_DEFAULT_W,
 } from './shapes/pdf/PdfConstants'
-import { AssetRecordType, TLAsset, TLAssetId } from 'tldraw'
+import { AssetRecordType, TLAsset, TLAssetId, useValue } from 'tldraw'
 import { PdfProcessor } from './utils/PdfProcessor'
+import { showAppToast, ToastBridge } from './components/ToastBridge'
 
 // Customize tldraw's styles to play to the agent's strengths
 DefaultSizeStyle.setDefaultValue('s')
 
 async function addPdfToCanvas(editor: Editor, file: File, point: { x: number; y: number }) {
 	if (file.type !== 'application/pdf') return
+
+	// Rendering a large PDF takes a while - say so instead of appearing hung.
+	// (Errors are surfaced by the callers, which know their own context.)
+	showAppToast({ title: `Importing "${file.name}"…`, severity: 'info' })
 
 	const pages = await PdfProcessor.processFile(file)
 	if (!pages.length) return
@@ -490,6 +495,11 @@ function App() {
 				})
 			} catch (err) {
 				console.error('Failed to process PDF upload', err)
+				showAppToast({
+					title: `Couldn't import "${pdfFiles[i].name}"`,
+					description: err instanceof Error ? err.message : undefined,
+					severity: 'error',
+				})
 			}
 		}
 
@@ -600,12 +610,19 @@ function App() {
 		setUiView('timeline')
 	}, [app])
 
-	const currentWorkspaceForTimeline = useMemo(() => {
-		if (!app) return null
-		const workspaces = app.workspaces.getWorkspaces()
-		const targetId = selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId()
-		return workspaces.find((w) => w.id === targetId) ?? app.workspaces.getCurrentWorkspace()
-	}, [app, selectedWorkspaceId])
+	// useValue, not useMemo: the workspace list lives in atoms, so a plain memo
+	// only refreshed when App happened to re-render for other reasons.
+	const workspaceList = useValue('workspace-list', () => app?.workspaces.getWorkspaces() ?? [], [app])
+	const currentWorkspaceForTimeline = useValue(
+		'timeline-workspace',
+		() => {
+			if (!app) return null
+			const workspaces = app.workspaces.getWorkspaces()
+			const targetId = selectedWorkspaceId ?? app.workspaces.getCurrentWorkspaceId()
+			return workspaces.find((w) => w.id === targetId) ?? app.workspaces.getCurrentWorkspace()
+		},
+		[app, selectedWorkspaceId]
+	)
 
 	// Global hotkey: ? toggles the Math cheat sheet
 	useEffect(() => {
@@ -801,6 +818,11 @@ function App() {
 										})
 									} catch (err) {
 										console.error('Failed to process PDF', err)
+										showAppToast({
+											title: `Couldn't import "${files[i].name}"`,
+											description: err instanceof Error ? err.message : undefined,
+											severity: 'error',
+										})
 									}
 								}
 							}
@@ -825,6 +847,7 @@ function App() {
 						overrides={overrides}
 						components={components}
 					>
+						<ToastBridge />
 						<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
 					</Tldraw>
 					{app && uiView === 'editor' && (
@@ -857,7 +880,8 @@ function App() {
 				{app && uiView === 'landing' && (
 					<TldrawAgentAppContextProvider app={app}>
 						<WorkspaceLandingPage
-							workspaces={app.workspaces.getWorkspaces()}
+							workspaces={workspaceList}
+							onImportWorkspace={(workspace) => app.workspaces.importWorkspace(workspace)}
 							onSelectWorkspace={(workspaceId) => {
 								app.workspaces.switchWorkspace(workspaceId)
 								setSelectedWorkspaceId(workspaceId)

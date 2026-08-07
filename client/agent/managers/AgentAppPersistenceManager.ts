@@ -1,11 +1,10 @@
-import { react } from 'tldraw'
-import { PersistedAgentState, TldrawAgent } from '../TldrawAgent'
+import { PersistedAgentState } from '../TldrawAgent'
 import { BaseAgentAppManager } from './BaseAgentAppManager'
 
 /**
- * The key prefix used for localStorage persistence.
+ * The localStorage key used by the legacy persistence path (see below).
  */
-const STORAGE_PREFIX = 'tldraw-agent-app'
+const LEGACY_STORAGE_KEY = 'tldraw-agent-app:state'
 
 /**
  * The persisted state for the entire app.
@@ -16,27 +15,24 @@ export interface PersistedAppState {
 }
 
 /**
- * Manager for app-level state persistence.
+ * Manager for app-level agent state (de)serialization.
  *
- * Coordinates loading and saving agent state to localStorage.
- * Calls agent-level serializeState() and loadState() methods
- * to handle the actual state serialization/deserialization.
+ * Persistence itself is owned by WorkspaceManager: agent state rides inside
+ * the workspace working-state that its dirty-flag timer writes to IndexedDB,
+ * and boot restores it via `loadAppState` from there.
+ *
+ * This class used to ALSO write the whole serialized app state to
+ * localStorage reactively - which fired on every streaming delta (chat
+ * history updates per chunk), JSON-stringifying multi-megabyte diffs on the
+ * main thread, and silently stopping at the ~5MB quota. Nothing ever read
+ * that state back, so the path was deleted; `consumeLegacyLocalStorageState`
+ * migrates anything a pre-IndexedDB session left behind.
  */
 export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	/**
 	 * Whether we're currently loading state to prevent premature saves.
 	 */
 	private isLoadingState = false
-
-	/**
-	 * Cleanup function for the agents list watcher.
-	 */
-	private agentsListCleanup: (() => void) | null = null
-
-	/**
-	 * Cleanup functions for per-agent state watchers, keyed by agent ID.
-	 */
-	private agentWatcherCleanupFns = new Map<string, () => void>()
 
 	/**
 	 * Check if state is currently being loaded.
@@ -59,41 +55,6 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 				},
 				{} as Record<string, PersistedAgentState>
 			),
-		}
-	}
-
-	/**
-	 * Load app state from localStorage.
-	 * Call this after the app is initialized.
-	 * Creates agents for all persisted agent IDs that don't already exist.
-	 */
-	loadState() {
-		this.isLoadingState = true
-
-		try {
-			const appState = this.loadValue<PersistedAppState>('state')
-			if (!appState) {
-				this.isLoadingState = false
-				return
-			}
-
-			// Create agents for all persisted IDs (createAgent returns existing if already exists)
-			for (const agentId of Object.keys(appState.agents)) {
-				this.app.agents.createAgent(agentId)
-			}
-
-			// Load state for each agent
-			const agents = this.app.agents.getAgents()
-			agents.forEach((agent) => {
-				const agentState = appState.agents[agent.id]
-				if (agentState) {
-					agent.loadState(agentState)
-				}
-			})
-		} catch (e) {
-			console.error('Failed to load app state:', e)
-		} finally {
-			this.isLoadingState = false
 		}
 	}
 
@@ -126,140 +87,35 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	}
 
 	/**
-	 * Start auto-saving app state changes.
-	 * Call this after loadState() to avoid saving during load.
-	 * Reactively watches the agents list and all agent state.
+	 * Read (and delete) app state left in localStorage by the legacy
+	 * persistence path. Returns null when there is nothing usable.
+	 *
+	 * Call once at boot: when IndexedDB has no workspace state, the returned
+	 * state is the pre-IndexedDB session to restore; either way the key is
+	 * removed so the dead path can't linger.
 	 */
-	startAutoSave() {
-		// Watch for changes to the agents list and set up per-agent watchers
-		this.agentsListCleanup = react('agents list', () => {
-			const agents = this.app.agents.getAgents()
-			const currentAgentIds = new Set(agents.map((a) => a.id))
+	consumeLegacyLocalStorageState(): PersistedAppState | null {
+		const localStorage = globalThis.localStorage
+		if (!localStorage) return null
 
-			// Set up watchers for new agents
-			for (const agent of agents) {
-				if (!this.agentWatcherCleanupFns.has(agent.id)) {
-					const cleanup = this.createAgentStateWatcher(agent)
-					this.agentWatcherCleanupFns.set(agent.id, cleanup)
-				}
+		try {
+			const stored = localStorage.getItem(LEGACY_STORAGE_KEY)
+			if (!stored) return null
+			const parsed = JSON.parse(stored) as PersistedAppState
+			localStorage.removeItem(LEGACY_STORAGE_KEY)
+			if (parsed && typeof parsed === 'object' && parsed.agents) {
+				return parsed
 			}
-
-			// Clean up watchers for removed agents
-			for (const id of this.agentWatcherCleanupFns.keys()) {
-				if (!currentAgentIds.has(id)) {
-					const cleanup = this.agentWatcherCleanupFns.get(id)
-					if (cleanup) {
-						cleanup()
-					}
-					this.agentWatcherCleanupFns.delete(id)
-				}
-			}
-
-			// Save when agent list changes (if not loading)
-			if (!this.isLoadingState) {
-				this.saveState()
-			}
-		})
-	}
-
-	/**
-	 * Create a reactive watcher for a single agent's state.
-	 */
-	private createAgentStateWatcher(agent: TldrawAgent): () => void {
-		return react(`${agent.id} state`, () => {
-			// Access reactive state to trigger on changes
-			agent.chat.getHistory()
-			agent.chatOrigin.getOrigin()
-			agent.todos.getTodos()
-			agent.context.getItems()
-			agent.modelName.getModelName()
-			agent.debug.getDebugFlags()
-			agent.usage.getTotals()
-
-			// Save if not currently loading
-			if (!this.isLoadingState) {
-				this.saveState()
-			}
-		})
-	}
-
-	/**
-	 * Save the current app state to localStorage.
-	 */
-	private saveState() {
-		const agents = this.app.agents.getAgents()
-		// Don't save if no agents exist (e.g., during dispose)
-		if (agents.length === 0) {
-			return
+		} catch {
+			localStorage.removeItem(LEGACY_STORAGE_KEY)
 		}
-		const appState = this.serializeState()
-		this.saveValue('state', appState)
-	}
-
-	/**
-	 * Stop auto-saving and clean up watchers.
-	 */
-	stopAutoSave() {
-		if (this.agentsListCleanup) {
-			this.agentsListCleanup()
-			this.agentsListCleanup = null
-		}
-		for (const cleanup of this.agentWatcherCleanupFns.values()) {
-			cleanup()
-		}
-		this.agentWatcherCleanupFns.clear()
+		return null
 	}
 
 	/**
 	 * Reset the manager to its initial state.
 	 */
 	reset() {
-		this.stopAutoSave()
 		this.isLoadingState = false
-	}
-
-	/**
-	 * Dispose of the persistence manager.
-	 */
-	override dispose() {
-		this.stopAutoSave()
-		super.dispose()
-	}
-
-	// --- Helper methods ---
-
-	/**
-	 * Load a value from localStorage.
-	 */
-	private loadValue<T>(key: string): T | null {
-		const localStorage = globalThis.localStorage
-		if (!localStorage) return null
-
-		try {
-			const fullKey = `${STORAGE_PREFIX}:${key}`
-			const stored = localStorage.getItem(fullKey)
-			if (stored) {
-				return JSON.parse(stored) as T
-			}
-		} catch {
-			console.warn(`Couldn't load ${key} from localStorage`)
-		}
-
-		return null
-	}
-
-	/**
-	 * Save a value to localStorage.
-	 */
-	private saveValue<T>(key: string, value: T): void {
-		const localStorage = globalThis.localStorage
-		if (!localStorage) return
-
-		try {
-			const fullKey = `${STORAGE_PREFIX}:${key}`
-			localStorage.setItem(fullKey, JSON.stringify(value))
-		} catch {
-			console.warn(`Couldn't save ${key} to localStorage`)
-		}
 	}
 }
