@@ -1,3 +1,5 @@
+import { useDialog } from './useDialog'
+
 interface MathCheatSheetProps {
 	onClose: () => void
 }
@@ -27,6 +29,9 @@ const MATHLIVE_SHORTCUTS = [
 ]
 
 export function MathCheatSheet({ onClose }: MathCheatSheetProps) {
+	// The component only mounts while the sheet is shown, so it is always open
+	const dialogRef = useDialog(true, onClose)
+
 	return (
 		<div
 			style={{
@@ -42,6 +47,10 @@ export function MathCheatSheet({ onClose }: MathCheatSheetProps) {
 			onClick={onClose}
 		>
 			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-label="Math keyboard shortcuts"
 				style={{
 					backgroundColor: 'rgba(22, 25, 31, 0.95)',
 					border: '1px solid rgba(255,255,255,0.12)',
@@ -63,6 +72,7 @@ export function MathCheatSheet({ onClose }: MathCheatSheetProps) {
 					</h2>
 					<button
 						onClick={onClose}
+						aria-label="Close cheat sheet"
 						style={{
 							background: 'transparent',
 							border: 'none',
@@ -86,7 +96,7 @@ export function MathCheatSheet({ onClose }: MathCheatSheetProps) {
 				</Section>
 
 				<p style={{ margin: '20px 0 0', fontSize: 11, color: '#64748b', textAlign: 'center' }}>
-					Press <Kbd>h</Kbd> or <Kbd>?</Kbd> at any time to toggle this panel
+					Press <Kbd>?</Kbd> at any time to toggle this panel
 				</p>
 			</div>
 		</div>

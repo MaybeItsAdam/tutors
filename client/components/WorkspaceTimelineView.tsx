@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useValue } from 'tldraw'
 import { WorkspaceBranch, WorkspaceSnapshot } from '../agent/managers/WorkspaceManager'
 import { useTldrawAgentApp } from '../agent/TldrawAgentAppProvider'
@@ -178,6 +178,7 @@ function computeLayout(branches: WorkspaceBranch[]) {
 	const snapshotCol = new Map<string, number>()
 	const snapshotRow = new Map<string, number>()
 	const nodes: LayoutNode[] = []
+	const nodeBySnapshotId = new Map<string, LayoutNode>()
 
 	for (let rowIdx = 0; rowIdx < sorted.length; rowIdx++) {
 		const branch = sorted[rowIdx]
@@ -193,14 +194,16 @@ function computeLayout(branches: WorkspaceBranch[]) {
 			const col = startCol + i
 			snapshotCol.set(snap.id, col)
 			snapshotRow.set(snap.id, rowIdx)
-			nodes.push({
+			const node: LayoutNode = {
 				snapshotId: snap.id,
 				branchId: branch.id,
 				col,
 				row: rowIdx,
 				x: col * STEP_X,
 				y: rowIdx * STEP_Y,
-			})
+			}
+			nodes.push(node)
+			nodeBySnapshotId.set(snap.id, node)
 		})
 	}
 
@@ -211,8 +214,8 @@ function computeLayout(branches: WorkspaceBranch[]) {
 
 		// Sequence edges within branch
 		for (let i = 1; i < snaps.length; i++) {
-			const prev = nodes.find(n => n.snapshotId === snaps[i - 1].id)
-			const curr = nodes.find(n => n.snapshotId === snaps[i].id)
+			const prev = nodeBySnapshotId.get(snaps[i - 1].id)
+			const curr = nodeBySnapshotId.get(snaps[i].id)
 			if (prev && curr) {
 				edges.push({
 					type: 'sequence',
@@ -226,8 +229,8 @@ function computeLayout(branches: WorkspaceBranch[]) {
 
 		// Fork edge from parent snapshot to this branch's first snapshot
 		if (branch.forkedFromSnapshotId && snaps.length > 0) {
-			const src = nodes.find(n => n.snapshotId === branch.forkedFromSnapshotId)
-			const dst = nodes.find(n => n.snapshotId === snaps[0].id)
+			const src = nodeBySnapshotId.get(branch.forkedFromSnapshotId)
+			const dst = nodeBySnapshotId.get(snaps[0].id)
 			if (src && dst) {
 				// src is above dst (lower row index), arrow exits src bottom, enters dst top
 				edges.push({
@@ -243,8 +246,8 @@ function computeLayout(branches: WorkspaceBranch[]) {
 		// Merge edges: snapshot.mergedFromSnapshotId → this snapshot
 		for (const snap of snaps) {
 			if (!snap.mergedFromSnapshotId) continue
-			const src = nodes.find(n => n.snapshotId === snap.mergedFromSnapshotId)
-			const dst = nodes.find(n => n.snapshotId === snap.id)
+			const src = nodeBySnapshotId.get(snap.mergedFromSnapshotId)
+			const dst = nodeBySnapshotId.get(snap.id)
 			if (!src || !dst) continue
 
 			const srcBelow = src.row > dst.row
@@ -397,7 +400,7 @@ export function WorkspaceTimelineView({
 	// Pan & zoom state
 	const [pan, setPan] = useState({ x: 80, y: 60 })
 	const [zoom, setZoom] = useState(1)
-	const isDragging = useRef(false)
+	const [isDragging, setIsDragging] = useState(false)
 	const dragOrigin = useRef<{ mx: number; my: number; px: number; py: number } | null>(null)
 	const viewportRef = useRef<HTMLDivElement>(null)
 
@@ -407,12 +410,12 @@ export function WorkspaceTimelineView({
 
 	const handleViewportMouseDown = useCallback((e: React.MouseEvent) => {
 		if (e.button !== 0) return
-		isDragging.current = true
+		setIsDragging(true)
 		dragOrigin.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y }
 	}, [pan])
 
 	const handleViewportMouseMove = useCallback((e: React.MouseEvent) => {
-		if (!isDragging.current || !dragOrigin.current) return
+		if (!dragOrigin.current) return
 		setPan({
 			x: dragOrigin.current.px + (e.clientX - dragOrigin.current.mx),
 			y: dragOrigin.current.py + (e.clientY - dragOrigin.current.my),
@@ -420,14 +423,25 @@ export function WorkspaceTimelineView({
 	}, [])
 
 	const handleViewportMouseUp = useCallback(() => {
-		isDragging.current = false
+		setIsDragging(false)
 		dragOrigin.current = null
 	}, [])
 
-	const handleWheel = useCallback((e: React.WheelEvent) => {
-		e.preventDefault()
-		setZoom(z => Math.max(0.2, Math.min(2.5, z * (1 - e.deltaY * 0.001))))
-	}, [])
+	// Zoom on wheel. React attaches wheel listeners passively at the root since
+	// v17, so preventDefault in an onWheel prop is a no-op — attach a native
+	// non-passive listener to actually stop the page from scrolling.
+	useEffect(() => {
+		const el = viewportRef.current
+		if (!el) return
+		const handleWheel = (e: WheelEvent) => {
+			e.preventDefault()
+			setZoom(z => Math.max(0.2, Math.min(2.5, z * (1 - e.deltaY * 0.001))))
+		}
+		el.addEventListener('wheel', handleWheel, { passive: false })
+		return () => el.removeEventListener('wheel', handleWheel)
+		// The viewport is only rendered once a workspace exists, so re-run when
+		// it appears (the ref is null on the early-return renders).
+	}, [workspace])
 
 	const handleForkConfirm = useCallback((name: string) => {
 		if (!forkTarget) return
@@ -466,8 +480,7 @@ export function WorkspaceTimelineView({
 				onMouseMove={handleViewportMouseMove}
 				onMouseUp={handleViewportMouseUp}
 				onMouseLeave={handleViewportMouseUp}
-				onWheel={handleWheel}
-				style={{ cursor: isDragging.current ? 'grabbing' : 'grab' }}
+				style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
 			>
 				<div
 					className="stc-canvas"

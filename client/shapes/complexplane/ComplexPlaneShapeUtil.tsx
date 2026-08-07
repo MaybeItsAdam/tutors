@@ -350,6 +350,7 @@ function ComplexPlaneRenderer({
 					</span>
 					<input
 						autoFocus
+						aria-label="Complex function expression f(z)"
 						defaultValue={expression}
 						onChange={(e) => setEditExpr(e.target.value)}
 						onKeyDown={handleKeyDown}

@@ -8,6 +8,8 @@ import {
 	useEditor
 } from 'tldraw'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { usePortalTarget } from '../../components/panels/PanelLayoutContext'
 import { IPdfDocumentShape, pdfDocumentShapeProps } from './PdfDocumentShape'
 import {
 	PDF_DEFAULT_NAME,
@@ -104,6 +106,8 @@ function PdfDocumentComponent({ shape }: { shape: IPdfDocumentShape }) {
 		width: PDF_POPUP_DEFAULT_W,
 		height: PDF_POPUP_DEFAULT_H,
 	})
+	const [draftName, setDraftName] = useState<string | null>(null)
+	const portalTarget = usePortalTarget()
 	const dragStateRef = useRef<{ pointerId: number; startX: number; startY: number; startLeft: number; startTop: number } | null>(null)
 	const resizeStateRef = useRef<{ pointerId: number; startX: number; startY: number; startW: number; startH: number } | null>(null)
 
@@ -313,19 +317,21 @@ function PdfDocumentComponent({ shape }: { shape: IPdfDocumentShape }) {
 			>
 				<input
 					aria-label="PDF filename"
-					value={displayName}
-					onChange={(e) =>
-						editor.updateShape<IPdfDocumentShape>({
-							id: shape.id,
-							type: 'pdf',
-							meta: {
-								...shapeMeta,
-								customName: e.currentTarget.value,
-							},
-						})
-					}
+					value={draftName ?? displayName}
+					// Local draft while typing: writing meta per keystroke pushed
+					// one undoable store entry per character.
+					onChange={(e) => setDraftName(e.currentTarget.value)}
+					onKeyDown={(e) => {
+						if (e.key === 'Enter') e.currentTarget.blur()
+						if (e.key === 'Escape') {
+							setDraftName(null)
+							e.currentTarget.blur()
+						}
+					}}
 					onBlur={(e) => {
 						const trimmed = e.currentTarget.value.trim()
+						setDraftName(null)
+						if ((trimmed.length ? trimmed : undefined) === shapeMeta.customName) return
 						editor.updateShape<IPdfDocumentShape>({
 							id: shape.id,
 							type: 'pdf',
@@ -358,10 +364,15 @@ function PdfDocumentComponent({ shape }: { shape: IPdfDocumentShape }) {
 			<HTMLContainer id={shape.id} style={{ pointerEvents: 'all', width: '100%', height: '100%' }}>
 				{documentFace}
 			</HTMLContainer>
-			{isOpen && (
-				<div
+			{/* Portaled out of the shape's DOM: everything inside it is transformed
+			    by the canvas camera, so the popup used to pan and scale with zoom
+			    while its drag math assumed screen pixels. */}
+			{isOpen &&
+				portalTarget &&
+				createPortal(
+					<div
 					style={{
-						position: 'absolute',
+						position: 'fixed',
 						left: popupRect.left,
 						top: popupRect.top,
 						width: `min(${popupRect.width}px, calc(100vw - ${PDF_POPUP_VIEWPORT_MARGIN}px))`,
@@ -477,8 +488,9 @@ function PdfDocumentComponent({ shape }: { shape: IPdfDocumentShape }) {
 							}
 						}}
 					/>
-				</div>
-			)}
+				</div>,
+					portalTarget
+				)}
 		</>
 	)
 }

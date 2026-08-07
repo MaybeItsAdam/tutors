@@ -1,4 +1,56 @@
-import { compile } from 'mathjs'
+import { create, all, factory } from 'mathjs'
+
+/**
+ * A dedicated mathjs instance with the known freeze vectors capped.
+ *
+ * Expressions come from the model and from imported workspace files, so a
+ * pathological expression (factorial(99999999), combinations of huge
+ * numbers...) is deliverable by a third party and would freeze the tab on
+ * every render of the persisted shape - recurring on reload. This caps the
+ * known unbounded-computation entry points and disables runtime imports.
+ * (Honest scope note: this is not a complete sandbox - a worker with a
+ * timeout is the full fix and is deferred; see the audit doc.)
+ */
+const math = create(all)
+
+const MAX_FACTORIAL_ARG = 10_000
+
+function capped(name: string, limit: number, original: (...args: never[]) => unknown) {
+	return factory(name, [], () => (...args: unknown[]) => {
+		for (const arg of args) {
+			if (typeof arg === 'number' && Math.abs(arg) > limit) {
+				throw new Error(`${name}: argument too large (max ${limit})`)
+			}
+		}
+		return (original as (...a: unknown[]) => unknown)(...args)
+	})
+}
+
+math.import(
+	[
+		capped('factorial', MAX_FACTORIAL_ARG, math.factorial as never),
+		capped('combinations', MAX_FACTORIAL_ARG, math.combinations as never),
+		capped('permutations', MAX_FACTORIAL_ARG, math.permutations as never),
+		capped('gamma', MAX_FACTORIAL_ARG, math.gamma as never),
+	],
+	{ override: true }
+)
+
+// The documented mathjs hardening recipe: no runtime imports or unit
+// definitions from expression content.
+math.import(
+	{
+		import: () => {
+			throw new Error('import is disabled')
+		},
+		createUnit: () => {
+			throw new Error('createUnit is disabled')
+		},
+	},
+	{ override: true }
+)
+
+const compile = math.compile.bind(math)
 
 /**
  * Compile-once mathjs evaluation.

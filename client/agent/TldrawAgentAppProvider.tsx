@@ -85,15 +85,29 @@ export const TldrawAgentAppProvider = memo(function TldrawAgentAppProvider({
 		// persistence.loadState() at startup.
 		instance.workspaces
 			.loadState()
-			.catch(handleError)
-			.then(() => {
+			.catch((e) => {
+				handleError(e)
+				return true
+			})
+			.then((hadPersistedState) => {
 				if (disposed) return
+
+				// One-time migration from the deleted localStorage persistence
+				// path: if IndexedDB had nothing, restore any agent state a
+				// pre-IndexedDB session left behind. The key is removed either
+				// way. (Persistence itself is WorkspaceManager's dirty-flag
+				// timer - the old reactive per-delta localStorage save is gone.)
+				const legacyState = instance.persistence.consumeLegacyLocalStorageState()
+				if (!hadPersistedState && legacyState) {
+					try {
+						instance.persistence.loadAppState(legacyState)
+					} catch (e) {
+						handleError(e)
+					}
+				}
 
 				// Ensure at least one agent exists (safety for legacy/empty state)
 				const defaultAgent = instance.agents.ensureAtLeastOneAgent()
-
-				// Start auto-saving (must be after loadState to avoid saving during load)
-				instance.persistence.startAutoSave()
 
 				setApp(instance)
 
@@ -185,7 +199,7 @@ export function useTldrawAgentApp(): TldrawAgentApp {
  *
  * @example
  * ```tsx
- * function ChatPanel() {
+ * function PromptButton() {
  *   const agent = useAgent()
  *   // agent is guaranteed to exist here
  *   agent.prompt('Draw a cat')

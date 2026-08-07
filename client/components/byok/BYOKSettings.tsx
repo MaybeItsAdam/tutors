@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type MouseEvent } from 'react'
 import { AIProvider, useBYOKConfig } from '../../utils/BYOKStore'
+import { useDialog } from '../useDialog'
 
 const PROVIDER_OPTIONS: Array<{ value: AIProvider; label: string }> = [
 	{ value: 'anthropic', label: 'Anthropic' },
@@ -15,6 +16,8 @@ export function BYOKSettings() {
 	const [provider, setProvider] = useState<AIProvider>(config.provider)
 	const [apiKey, setApiKey] = useState(config.apiKey)
 	const [remember, setRemember] = useState(config.remember)
+
+	const dialogRef = useDialog(isOpen, () => setIsOpen(false))
 
 	const resetDraft = useCallback(() => {
 		setProvider(config.provider)
@@ -74,7 +77,11 @@ export function BYOKSettings() {
 					onClick={() => setIsOpen(false)}
 				>
 					<div
+						ref={dialogRef}
 						className="byok-modal-content"
+						role="dialog"
+						aria-modal="true"
+						aria-label="BYOK API settings"
 						style={{
 							backgroundColor: 'var(--color-panel)',
 							padding: 24,
@@ -97,8 +104,9 @@ export function BYOKSettings() {
 						</p>
 
 						<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-							<label style={{ fontSize: 12, fontWeight: 600 }}>Provider</label>
+							<label htmlFor="byok-provider" style={{ fontSize: 12, fontWeight: 600 }}>Provider</label>
 							<select
+								id="byok-provider"
 								value={provider}
 								onChange={(e) => setProvider(e.target.value as AIProvider)}
 								style={{ padding: 8, borderRadius: 4, background: 'var(--color-bg)' }}
@@ -115,8 +123,9 @@ export function BYOKSettings() {
 						</div>
 
 						<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-							<label style={{ fontSize: 12, fontWeight: 600 }}>API Key</label>
+							<label htmlFor="byok-api-key" style={{ fontSize: 12, fontWeight: 600 }}>API Key</label>
 							<input
+								id="byok-api-key"
 								type="password"
 								value={apiKey}
 								onChange={(e) => setApiKey(e.target.value)}
