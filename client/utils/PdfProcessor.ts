@@ -1,10 +1,22 @@
-import * as pdfjs from 'pdfjs-dist'
+// pdfjs is only needed when a PDF is actually dropped/uploaded, so it loads
+// on demand - statically it was ~1MB of the initial bundle paid on first
+// paint of every session. Memoized so concurrent drops share one load.
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null
 
-// We use Vite's ?url to get the path to the worker script
-import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-
-// Set the worker source
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
+function loadPdfjs() {
+	if (!pdfjsPromise) {
+		pdfjsPromise = (async () => {
+			const [pdfjs, { default: workerUrl }] = await Promise.all([
+				import('pdfjs-dist'),
+				// Vite's ?url gives the path to the worker script
+				import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+			])
+			pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
+			return pdfjs
+		})()
+	}
+	return pdfjsPromise
+}
 
 export interface PdfPageData {
 	pageNumber: number
@@ -36,6 +48,7 @@ export class PdfProcessor {
 	 * per-page failures are counted and reported via the return's gaps.
 	 */
 	static async processFile(file: File, opts: PdfProcessOptions = {}): Promise<PdfPageData[]> {
+		const pdfjs = await loadPdfjs()
 		const arrayBuffer = await file.arrayBuffer()
 		const pdf = await pdfjs.getDocument({
 			data: arrayBuffer,

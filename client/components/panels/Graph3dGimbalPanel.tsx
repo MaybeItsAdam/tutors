@@ -1,12 +1,17 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { TLShapeId, useEditor, useValue } from 'tldraw'
 import { useBottomPanel, usePortalTarget } from './PanelLayoutContext'
 import {
 	dispatchGraph3dControl,
 	type Graph3dControlAction,
 } from '../../shapes/graph3d/Graph3dControlEvents'
-import { Graph3dGizmo3D } from '../../shapes/graph3d/Graph3dGizmo3D'
+// Lazy for the same reason as Graph3dRenderer: this statically imports three,
+// and the gimbal is mounted in Overlays - a static import here would drag
+// three back into the entry chunk.
+const Graph3dGizmo3D = lazy(() =>
+	import('../../shapes/graph3d/Graph3dGizmo3D').then((m) => ({ default: m.Graph3dGizmo3D }))
+)
 
 const GIMBAL_PANEL_WIDTH = 200
 
@@ -66,7 +71,9 @@ export function Graph3dGimbalPanel() {
 			</div>
 			<div className="graph3d-gimbal-panel__body">
 				<div className="graph3d-gimbal-panel__title">3D Controls</div>
-				<Graph3dGizmo3D shapeId={panelShapeId} onTrigger={trigger} />
+				<Suspense fallback={null}>
+					<Graph3dGizmo3D shapeId={panelShapeId} onTrigger={trigger} />
+				</Suspense>
 				<div className="graph3d-gimbal-panel__zoom">
 					<button
 						type="button"
