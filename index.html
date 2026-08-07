@@ -2,6 +2,9 @@
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
+		<!-- A Content-Security-Policy meta tag is injected here at BUILD time
+		     (see cspPlugin in vite.config.ts). Not present in dev: 'self'
+		     doesn't cover ws:, so a dev-time CSP would break Vite's HMR. -->
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<meta name="description" content="BYOK AI Tutoring Whiteboard — an infinite canvas where you and AI collaborate on math, science, and more." />
