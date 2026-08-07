@@ -19,9 +19,15 @@ export const UpsertTodoListItemActionUtil = registerActionUtil(
 			const index = this.agent.todos.getTodos().findIndex((item) => item.id === id)
 			if (index === -1) {
 				if (!text) {
-					this.agent.interrupt({
-						input: 'You must provide text when creating a new todo item.',
-					})
+					// Skip-and-report. This used to interrupt(), which cancelled
+					// the in-flight request and threw away every not-yet-streamed
+					// action in the turn - a whole model response lost to one
+					// malformed todo item.
+					this.agent.actions.recordFailedAction(
+						action,
+						'apply-error',
+						'A new todo item requires text; this item was skipped.'
+					)
 					return
 				}
 				this.agent.todos.push(id, text)

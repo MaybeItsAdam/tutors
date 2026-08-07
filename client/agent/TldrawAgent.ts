@@ -17,6 +17,13 @@ import { AgentModeType } from '../modes/AgentModeDefinitions'
 import { getPromptPartUtilsRecord, PromptPartUtil } from '../parts/PromptPartUtil'
 import { buildMessages } from '../prompt/buildMessages'
 import { buildSystemPrompt } from '../prompt/buildSystemPrompt'
+import {
+	AgentRequestFailedError,
+	AgentRequestOutcome,
+	backoffDelayMs,
+	isRetryableError,
+	MAX_REQUEST_ATTEMPTS,
+} from './AgentRequestOutcome'
 import { AgentActionManager } from './managers/AgentActionManager'
 import { AgentChatManager } from './managers/AgentChatManager'
 import { AgentChatOriginManager } from './managers/AgentChatOriginManager'
@@ -338,73 +345,136 @@ export class TldrawAgent {
 
 		this.requests.setIsPrompting(true)
 
-		const request = this.requests.getFullRequestFromInput(input)
-
-		// A new instruction from the user starts a fresh stretch of work, so the
-		// agent gets its full continuation budget back.
-		if (request.source === 'user') {
-			this.requests.resetContinuationCount()
-		}
-
-		const startingNode = this.mode.getCurrentModeNode()
-		startingNode.onPromptStart?.(this, request)
-
-		// Submit the request to the agent.
+		// Everything below runs inside try/finally: any throw - a mode hook, the
+		// mode invariant, prompt assembly - previously left $isPrompting stuck
+		// true, bricking the agent for the session ("Agent is already
+		// prompting") with no way back but a reset.
 		try {
-			await this.request(request)
+			const request = this.requests.getFullRequestFromInput(input)
+
+			// A new instruction from the user starts a fresh stretch of work, so
+			// the agent gets its full continuation budget back.
+			if (request.source === 'user') {
+				this.requests.resetContinuationCount()
+			}
+
+			const startingNode = this.mode.getCurrentModeNode()
+			startingNode.onPromptStart?.(this, request)
+
+			// Submit the request, retrying transient failures with backoff.
+			// Retries are re-POSTs: actions already applied from a failed
+			// attempt stay applied and appear in the rebuilt chat history, so
+			// the model continues rather than duplicating them.
+			let outcome: AgentRequestOutcome = { status: 'success' }
+			for (let attempt = 0; attempt < MAX_REQUEST_ATTEMPTS; attempt++) {
+				outcome = await this.request(request, { silentPromptItem: attempt > 0 })
+				if (!(outcome.status === 'error' && outcome.retryable)) break
+				if (attempt < MAX_REQUEST_ATTEMPTS - 1) {
+					const cancelled = await this.waitForRetry(attempt)
+					if (cancelled) {
+						outcome = { status: 'cancelled' }
+						break
+					}
+				}
+			}
+
+			if (outcome.status === 'error') {
+				// Surface once (not once per attempt), and do NOT run
+				// onPromptEnd - it would schedule an instant continuation off a
+				// failed request. A self-scheduled follow-up is dropped; a
+				// user interrupt survives and is consumed below.
+				this.onError(outcome.error)
+				const failedSchedule = this.requests.getScheduledRequest()
+				if (failedSchedule && failedSchedule.source !== 'user') {
+					this.requests.clearScheduledRequest()
+				}
+				if (!this.requests.getScheduledRequest() && this.mode.getCurrentModeDefinition().active) {
+					this.mode.setMode('idling')
+				}
+			} else if (outcome.status === 'success') {
+				let modeChanged = true
+				while (!this.requests.getScheduledRequest() && modeChanged) {
+					modeChanged = false
+					const currentModeType = this.mode.getCurrentModeType()
+					const currentModeNode = this.mode.getCurrentModeNode()
+					currentModeNode.onPromptEnd?.(this, request) // in case onPromptEnd switches modes
+					const newModeType = this.mode.getCurrentModeType()
+					if (newModeType !== currentModeType) {
+						modeChanged = true
+					}
+				}
+			} else {
+				// Cancelled. onPromptCancel (via agent.cancel) already moved the
+				// mode; a bare interrupt cancel leaves it active with a user
+				// request scheduled, which is consumed below. If neither
+				// happened, don't strand the agent in an active mode.
+				if (!this.requests.getScheduledRequest() && this.mode.getCurrentModeDefinition().active) {
+					this.mode.setMode('idling')
+				}
+			}
+
+			// Shared tail for every outcome: consume a scheduled request if one
+			// exists. This is how interrupt-while-generating works - the user's
+			// message lands as a scheduled request on a cancelled prompt - so
+			// the error and cancel paths must consume it too.
+			const scheduledRequest = this.requests.getScheduledRequest()
+			if (!scheduledRequest) {
+				const eventualModeType = this.mode.getCurrentModeType()
+				if (outcome.status === 'success' && this.mode.getCurrentModeDefinition().active) {
+					throw new Error(
+						`Agent is not allowed to become inactive during the active mode: ${eventualModeType}`
+					)
+				}
+				return
+			}
+
+			// Budget check. A user-sourced request resets the counter BEFORE the
+			// check - previously the increment ran first, so a user interrupt
+			// arriving exactly at the budget boundary was silently discarded by
+			// stopRunawayLoop.
+			if (scheduledRequest.source === 'user') {
+				this.requests.resetContinuationCount()
+			} else if (this.requests.incrementContinuationCount() > MAX_CONSECUTIVE_CONTINUATIONS) {
+				// The agent has used up its self-directed budget. Without this
+				// the loop is unbounded: `working.onPromptEnd` reschedules while
+				// any todo is outstanding, and only the model marks todos done.
+				this.stopRunawayLoop()
+				return
+			}
+
+			// Add the scheduled request to chat history
+			const resolvedData = await Promise.all(scheduledRequest.data)
+			this.chat.push({
+				type: 'continuation',
+				data: resolvedData,
+			})
+
+			// Handle the scheduled request and clear it
+			this.requests.clearScheduledRequest()
+			await this.prompt(scheduledRequest, { nested: true })
 		} catch (e) {
 			this.onError(e)
+		} finally {
 			this.requests.setIsPrompting(false)
 			this.requests.setCancelFn(null)
-			return
 		}
+	}
 
-		let modeChanged = true
-		while (!this.requests.getScheduledRequest() && modeChanged) {
-			modeChanged = false
-			const currentModeType = this.mode.getCurrentModeType()
-			const currentModeNode = this.mode.getCurrentModeNode()
-			currentModeNode.onPromptEnd?.(this, request) // in case onPromptEnd switches modes
-			const newModeType = this.mode.getCurrentModeType()
-			if (newModeType !== currentModeType) {
-				modeChanged = true
-			}
-		}
-
-		// If there's still no scheduled request, quit
-		const scheduledRequest = this.requests.getScheduledRequest()
-		const eventualModeType = this.mode.getCurrentModeType()
-		const eventualModeDefinition = this.mode.getCurrentModeDefinition()
-		if (!scheduledRequest) {
-			if (eventualModeDefinition.active) {
-				throw new Error(
-					`Agent is not allowed to become inactive during the active mode: ${eventualModeType}`
-				)
-			}
-			this.requests.setIsPrompting(false)
-			this.requests.setCancelFn(null)
-			return
-		}
-
-		// If there *is* a scheduled request, first check the agent still has
-		// budget to keep going by itself. Without this the loop is unbounded:
-		// `working.onPromptEnd` reschedules while any todo is outstanding, and
-		// only the model marks todos done.
-		if (this.requests.incrementContinuationCount() > MAX_CONSECUTIVE_CONTINUATIONS) {
-			this.stopRunawayLoop()
-			return
-		}
-
-		// Add the scheduled request to chat history
-		const resolvedData = await Promise.all(scheduledRequest.data)
-		this.chat.push({
-			type: 'continuation',
-			data: resolvedData,
+	/**
+	 * Wait out a retry backoff. Returns true if the wait was cancelled (via
+	 * agent.cancel or an interrupt), in which case the retry must not happen.
+	 */
+	private waitForRetry(attempt: number): Promise<boolean> {
+		return new Promise<boolean>((resolve) => {
+			const timer = setTimeout(() => {
+				this.requests.setCancelFn(null)
+				resolve(false)
+			}, backoffDelayMs(attempt))
+			this.requests.setCancelFn(() => {
+				clearTimeout(timer)
+				resolve(true)
+			})
 		})
-
-		// Handle the scheduled request and clear it
-		this.requests.clearScheduledRequest()
-		await this.prompt(scheduledRequest, { nested: true })
 	}
 
 	/**
@@ -440,9 +510,7 @@ export class TldrawAgent {
 		if (this.mode.getCurrentModeType() !== 'idling') {
 			this.mode.setMode('idling')
 		}
-
-		this.requests.setIsPrompting(false)
-		this.requests.setCancelFn(null)
+		// isPrompting/cancelFn are cleared by prompt()'s finally.
 	}
 
 	/**
@@ -456,10 +524,13 @@ export class TldrawAgent {
 	 * carrying out evals.
 	 *
 	 * @param input - The input to form the request from.
-	 * @returns A promise for when the request is complete and a cancel function
-	 * to abort the request.
+	 * @returns The outcome of the request: success, cancelled, or an error
+	 * with a retryability judgement.
 	 */
-	async request(input: AgentInput) {
+	async request(
+		input: AgentInput,
+		opts: { silentPromptItem?: boolean } = {}
+	): Promise<AgentRequestOutcome> {
 		const request = this.requests.getFullRequestFromInput(input)
 
 		// Interrupt any currently active request
@@ -469,14 +540,19 @@ export class TldrawAgent {
 		this.requests.setActiveRequest(request)
 
 		// Call an external helper function to request the agent
-		const { promise, cancel } = this.requestAgentActions(request)
+		const { promise, cancel } = this.requestAgentActions(request, opts)
 
 		this.requests.setCancelFn(cancel)
 
-		const results = await promise
-		this.requests.clearActiveRequest()
+		const outcome = await promise
+		// Only clear our own request - a successor may already be active if
+		// this one was interrupted, and clearing unconditionally would break
+		// the UI highlights bound to the active request.
+		if (this.requests.getActiveRequest() === request) {
+			this.requests.clearActiveRequest()
+		}
 
-		return results
+		return outcome
 	}
 
 	/**
@@ -567,7 +643,10 @@ export class TldrawAgent {
 		if (isCurrentlyActive) {
 			this.requests.setScheduledRequest(request)
 		} else {
-			this.prompt(request)
+			// Every user prompt flows through here un-awaited (via the chat
+			// panel's interrupt -> schedule), so a rejection would otherwise be
+			// an unhandled promise rejection with no toast.
+			this.prompt(request).catch((e) => this.onError(e))
 		}
 	}
 
@@ -636,27 +715,14 @@ export class TldrawAgent {
 	 *
 	 * This is a helper function that is used internally by the agent.
 	 */
-	private requestAgentActions(request: AgentRequest) {
+	private requestAgentActions(
+		request: AgentRequest,
+		{ silentPromptItem = false }: { silentPromptItem?: boolean } = {}
+	) {
 		const { editor } = this
 
-		// Add user prompt to chat history
-		const promptHistoryItem: ChatHistoryPromptItem = {
-			type: 'prompt',
-			promptSource: request.source,
-			agentFacingMessage: request.agentMessages.join('\n'),
-			userFacingMessage: request.userMessages.length > 0 ? request.userMessages.join('\n') : null,
-			contextItems: structuredClone(request.contextItems),
-			selectedShapes: this.editor
-				.getSelectedShapes()
-				.map((shape) => convertTldrawShapeToFocusedShape(this.editor, structuredClone(shape))),
-		}
-		this.chat.push(promptHistoryItem)
-
-		let cancelled = false
-		const controller = new AbortController()
-		const signal = controller.signal
-		const helpers = new AgentHelpers(this)
-
+		// The mode check runs BEFORE the history push - previously an
+		// inactive-mode throw left an orphaned prompt item in the chat.
 		const modeDefinition = this.mode.getCurrentModeDefinition()
 		if (!modeDefinition.active) {
 			this.cancel()
@@ -665,9 +731,30 @@ export class TldrawAgent {
 			)
 		}
 
+		// Add user prompt to chat history. Retries of the same logical request
+		// skip this - the prompt is already there from the first attempt.
+		if (!silentPromptItem) {
+			const promptHistoryItem: ChatHistoryPromptItem = {
+				type: 'prompt',
+				promptSource: request.source,
+				agentFacingMessage: request.agentMessages.join('\n'),
+				userFacingMessage: request.userMessages.length > 0 ? request.userMessages.join('\n') : null,
+				contextItems: structuredClone(request.contextItems),
+				selectedShapes: this.editor
+					.getSelectedShapes()
+					.map((shape) => convertTldrawShapeToFocusedShape(this.editor, structuredClone(shape))),
+			}
+			this.chat.push(promptHistoryItem)
+		}
+
+		let cancelled = false
+		const controller = new AbortController()
+		const signal = controller.signal
+		const helpers = new AgentHelpers(this)
+
 		const availableActions: readonly AgentAction['_type'][] = modeDefinition.actions
 
-		const requestPromise = (async () => {
+		const requestPromise: Promise<AgentRequestOutcome> = (async () => {
 			const prompt = await this.preparePrompt(request, helpers)
 			let incompleteDiff: RecordsDiff<TLRecord> | null = null
 			const actionPromises: Promise<void>[] = []
@@ -684,8 +771,31 @@ export class TldrawAgent {
 								const actionUtilType = this.actions.getAgentActionUtilType(action._type)
 								const actionUtil = this.actions.getAgentActionUtil(action._type)
 
+								// An unrecognized _type resolves to 'unknown', which IS in
+								// the mode's actions array - without this check it would
+								// sail through, apply nothing, and be logged to history as
+								// a success the model then builds on.
+								if (
+									action.complete &&
+									action._type &&
+									action._type !== 'unknown' &&
+									actionUtilType === 'unknown'
+								) {
+									this.actions.recordFailedAction(
+										action,
+										'unrecognized-type',
+										`No action of type "${action._type}" exists.`
+									)
+									return
+								}
+
 								// If the action is not in the mode's available actions, skip it
 								if (!availableActions.includes(actionUtilType)) {
+									this.actions.recordFailedAction(
+										action,
+										'mode-unavailable',
+										`The "${actionUtilType}" action is not available right now.`
+									)
 									return
 								}
 
@@ -704,15 +814,28 @@ export class TldrawAgent {
 								// the model has finished streaming them.
 								if (action.complete) {
 									const schema = getActionSchema(action._type)
-									if (schema && !schema.safeParse(action).success) {
-										console.warn('Skipping action that failed schema validation:', action)
-										return
+									if (schema) {
+										const result = schema.safeParse(action)
+										if (!result.success) {
+											const reason = result.error.issues
+												.slice(0, 3)
+												.map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+												.join('; ')
+											this.actions.recordFailedAction(action, 'schema-invalid', reason)
+											console.warn('Skipping action that failed schema validation:', action)
+											return
+										}
 									}
 								}
 
 								// Sanitize the agent's action
 								const transformedAction = actionUtil.sanitizeAction(action, helpers)
 								if (!transformedAction) {
+									this.actions.recordFailedAction(
+										action,
+										'sanitize-rejected',
+										'The action referred to something that does not exist, or had invalid fields.'
+									)
 									return
 								}
 
@@ -744,11 +867,17 @@ export class TldrawAgent {
 					}
 				}
 				await Promise.all(actionPromises)
+				return { status: 'success' } as const
 			} catch (e) {
-				if (e === 'Cancelled by user' || (e instanceof Error && e.name === 'AbortError')) {
-					return
+				// User cancellation: the cancel() below sets `cancelled` before
+				// aborting, so an AbortError here without the flag is the idle
+				// timeout, which is a retryable failure rather than a cancel.
+				if (cancelled || e === 'Cancelled by user') {
+					return { status: 'cancelled' } as const
 				}
-				this.onError(e)
+				// The retry loop in prompt() owns surfacing - reporting here
+				// used to produce one toast per attempt.
+				return { status: 'error', error: e, retryable: isRetryableError(e) } as const
 			} finally {
 				// If the stream ended (cancel, error, truncation) while an
 				// incomplete action was still applied, revert it. Otherwise a
@@ -846,7 +975,11 @@ export class TldrawAgent {
 
 			if (!res.ok) {
 				const text = await res.text().catch(() => `HTTP ${res.status}`)
-				throw new Error(`Request failed (${res.status}): ${text}`)
+				// Retryability is judged from the status: 408/429/5xx are
+				// transient, 4xx (bad key, invalid model...) are not.
+				throw new AgentRequestFailedError(`Request failed (${res.status}): ${text}`, {
+					httpStatus: res.status,
+				})
 			}
 
 			if (!res.body) {
@@ -880,9 +1013,11 @@ export class TldrawAgent {
 							continue
 						}
 
-						// If the response contains an error, throw it
+						// If the response contains an error, throw it. Backend error
+						// events are provider-level failures that already crossed
+						// the relay - a retry would hit the same thing.
 						if (data && typeof data === 'object' && 'error' in data) {
-							throw new Error(String(data.error))
+							throw new AgentRequestFailedError(String(data.error), { retryable: false })
 						}
 
 						// The stream ends with a usage summary rather than an action.

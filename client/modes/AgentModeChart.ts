@@ -31,15 +31,20 @@ const _AGENT_MODE_CHART: Record<AgentModeDefinition['type'], AgentModeNode> = {
 			agent.mode.setMode('working')
 		},
 		onEnter(agent, _fromMode) {
-			agent.todos.reset()
+			// Flush (drop done, keep unfinished) rather than reset: the
+			// runaway-stop message tells the user "N todos outstanding, tell
+			// me to keep going" - a full reset erased exactly those todos, so
+			// the promised recovery could never work.
+			agent.todos.flush()
 			agent.userAction.clearHistory()
 		},
 	},
 	working: {
 		onEnter(agent, fromMode) {
-			// Reset state when entering working mode
-			agent.todos.reset()
-			// agent.userAction.clearHistory()
+			// Reset state when entering working mode. Todos deliberately
+			// survive: unfinished items carried over from a runaway stop are
+			// the plan the user may ask the agent to resume; user-prompt
+			// hygiene is handled by onPromptStart's flush below.
 			agent.context.clear()
 
 			// When entering working mode from idling, clear created shapes tracking
