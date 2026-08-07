@@ -35,20 +35,39 @@ class IncrementalJsonParser:
         # Set once nesting passes MAX_JSON_DEPTH. Sticky: the offending prefix
         # never goes away, so no later chunk can make the document acceptable.
         self._too_deep = False
+        # Set once the document's outermost delimiter closes. Anything after
+        # that (markdown fences, prose postambles) is junk that would poison
+        # json.loads forever, so the buffer is frozen at the closing character
+        # and later chunks are ignored.
+        self._complete = False
 
     @property
     def buffer(self) -> str:
-        """Everything fed so far."""
+        """Everything fed so far (truncated at the document end once complete)."""
         return self._buffer
+
+    @property
+    def depth(self) -> int:
+        """How many delimiters are currently open."""
+        return len(self._stack)
+
+    @property
+    def complete(self) -> bool:
+        """Whether the document's outermost delimiter has closed."""
+        return self._complete
+
+    def ingest(self, chunk: str) -> None:
+        """Add a chunk and fold it into the delimiter stack without parsing."""
+        if chunk and not self._complete:
+            self._buffer += chunk
+            self._scan()
 
     def feed(self, chunk: str):
         """
         Add a chunk and return the document parsed so far, or None if the
         current prefix can't be parsed (or is nested too deeply).
         """
-        if chunk:
-            self._buffer += chunk
-            self._scan()
+        self.ingest(chunk)
         return self.parse()
 
     def parse(self):
@@ -85,6 +104,10 @@ class IncrementalJsonParser:
                     escaped_quote = True
                 elif enclosing == '"':
                     stack.pop()
+                    if not stack:
+                        # A bare top-level string document just closed.
+                        self._end_document(i + 1)
+                        return
                 else:
                     stack.append('"')
                     if len(stack) > MAX_JSON_DEPTH:
@@ -109,10 +132,22 @@ class IncrementalJsonParser:
                     return
             elif char == '}' and enclosing == '{':
                 stack.pop()
+                if not stack:
+                    self._end_document(i)
+                    return
             elif char == ']' and enclosing == '[':
                 stack.pop()
+                if not stack:
+                    self._end_document(i)
+                    return
 
         self._scanned = i
+
+    def _end_document(self, end: int) -> None:
+        """The outermost delimiter closed at index `end - 1`; freeze there."""
+        self._complete = True
+        self._buffer = self._buffer[:end]
+        self._scanned = end
 
 
 def close_and_parse_json(string: str):

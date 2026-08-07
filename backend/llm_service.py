@@ -13,6 +13,16 @@ litellm.drop_params = True
 
 MAX_COMPLETION_TOKENS = int(os.getenv("MAX_COMPLETION_TOKENS", "8192"))
 
+# Read timeout (seconds) between chunks on the provider stream. litellm's
+# default is ~600s, which leaves a black-holed connection hanging for ten
+# minutes; the client's own idle abort fires at 90s.
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "120"))
+
+# Providers that support OpenAI-style JSON mode. Anthropic is deliberately
+# absent: litellm implements json_object for Anthropic via a forced tool call,
+# which would fight the assistant-prefill scheme below.
+JSON_MODE_PROVIDERS = ("openai", "gemini")
+
 # Anthropic honours assistant message prefill (the model continues from the
 # partial assistant turn), which locks the response into our JSON shape.
 # Gemini and OpenAI do not support prefill - the model restarts its own
@@ -102,20 +112,30 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
     response = None
     finish_reason = None
     usage: dict | None = None
+    final_payloads: list[dict] = []
+
+    completion_kwargs = dict(
+        model=model,
+        messages=local_messages,
+        api_key=api_key,
+        stream=True,
+        temperature=0,
+        max_tokens=MAX_COMPLETION_TOKENS,
+        timeout=LLM_TIMEOUT_SECONDS,
+        # Ask for a usage summary on the final chunk. Providers that don't
+        # support it drop the param (litellm.drop_params), in which case we
+        # simply report no usage.
+        stream_options={"include_usage": True},
+    )
+    if provider in JSON_MODE_PROVIDERS:
+        # Constrain the response to a JSON document. Without this, OpenAI and
+        # Gemini regularly wrap the document in markdown fences or prose,
+        # which used to end the turn in total silence. The emitter's fence
+        # stripping remains as the net for models that ignore the param.
+        completion_kwargs["response_format"] = {"type": "json_object"}
 
     try:
-        response = await litellm.acompletion(
-            model=model,
-            messages=local_messages,
-            api_key=api_key,
-            stream=True,
-            temperature=0,
-            max_tokens=MAX_COMPLETION_TOKENS,
-            # Ask for a usage summary on the final chunk. Providers that don't
-            # support it drop the param (litellm.drop_params), in which case we
-            # simply report no usage.
-            stream_options={"include_usage": True},
-        )
+        response = await litellm.acompletion(**completion_kwargs)
 
         async for chunk in response:
             chunk_usage = _extract_usage(chunk)
@@ -135,23 +155,38 @@ async def stream_agent_actions(model: str, messages: list, api_key: str) -> Asyn
             for payload in emitter.feed(choice.delta.content or ""):
                 yield _sse(payload)
 
-        for payload in emitter.finish(finish_reason):
-            yield _sse(payload)
-
-        if usage:
-            yield _sse(_build_usage_payload(model, usage))
+        final_payloads = emitter.finish(finish_reason)
 
     except asyncio.CancelledError:
-        # Client disconnected - close the upstream LLM stream to stop burning tokens
-        if response is not None:
-            try:
-                await response.aclose()
-            except Exception:
-                pass
-        return
+        # Client disconnected. Re-raise: swallowing CancelledError suppresses
+        # task cancellation. The upstream stream is closed in the finally.
+        raise
 
     except Exception:
         # Log the full error server-side, but don't leak provider/request
         # details (which may echo parts of the request) to the client.
         traceback.print_exc()
-        yield _sse({'error': 'The model request failed. Check your API key and model, then try again.'})
+        final_payloads = [
+            {"error": "The model request failed. Check your API key and model, then try again."}
+        ]
+
+    finally:
+        # Covers cancellation, GeneratorExit, and provider errors alike - the
+        # error path previously leaked the upstream stream.
+        if response is not None:
+            try:
+                await response.aclose()
+            except Exception:
+                pass
+
+    # Emit actions, then usage, then errors. The client stops reading at the
+    # first error event, so usage must come first or a truncated (but billed)
+    # turn would never be counted.
+    for payload in final_payloads:
+        if "error" not in payload:
+            yield _sse(payload)
+    if usage:
+        yield _sse(_build_usage_payload(model, usage))
+    for payload in final_payloads:
+        if "error" in payload:
+            yield _sse(payload)
