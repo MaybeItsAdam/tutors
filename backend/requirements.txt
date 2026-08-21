@@ -4,6 +4,6 @@
 # under PEP 440, ~=1.55 means >=1.55,==1.* and lets every 1.x minor through,
 # which is exactly what the pins exist to prevent.
 fastapi~=0.141.1
-uvicorn[standard]~=0.52.1
+uvicorn[standard]~=0.52.3
 litellm~=1.95.0
 python-dotenv~=1.2.2
