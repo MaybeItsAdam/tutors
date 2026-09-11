@@ -20,8 +20,8 @@
 		"node": ">=20.19"
 	},
 	"dependencies": {
-		"@lobehub/icons": "^5.15.0",
-		"katex": "^0.18.1",
+		"@lobehub/icons": "^5.18.0",
+		"katex": "^0.18.7",
 		"mathjs": "^15.1.1",
 		"mathlive": "^0.110.0",
 		"pdfjs-dist": "^4.10.38",
@@ -29,25 +29,25 @@
 		"react-dom": "^19.2.8",
 		"react-markdown": "^10.1.0",
 		"three": "^0.185.1",
-		"tldraw": "^5.2.5",
-		"zod": "^4.1.8"
+		"tldraw": "^5.4.0",
+		"zod": "^4.5.4"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@types/katex": "^0.16.7",
-		"@types/node": "^26.1.2",
+		"@types/node": "^26.5.0",
 		"@types/react": "^19.2.18",
-		"@types/react-dom": "^19.2.4",
+		"@types/react-dom": "^19.2.7",
 		"@types/three": "^0.185.4",
 		"@vitejs/plugin-react-swc": "^4.3.3",
-		"eslint": "^10.8.0",
+		"eslint": "^10.10.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-react-hooks": "^7.1.1",
 		"jsdom": "^30.0.1",
 		"prettier": "^3.9.6",
 		"typescript": "^5.8.3",
-		"typescript-eslint": "^8.66.0",
-		"vite": "^8.2.0",
+		"typescript-eslint": "^8.70.0",
+		"vite": "^8.2.2",
 		"vitest": "^4.1.10"
 	}
 }
