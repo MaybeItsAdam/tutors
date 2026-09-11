@@ -5,5 +5,5 @@
 # which is exactly what the pins exist to prevent.
 fastapi~=0.141.1
 uvicorn[standard]~=0.52.1
-litellm~=1.95.0
+litellm~=1.100.0
 python-dotenv~=1.2.2
