@@ -3,7 +3,7 @@
 # NOTE: the previous `litellm~=1.55` style pinned only the MAJOR version -
 # under PEP 440, ~=1.55 means >=1.55,==1.* and lets every 1.x minor through,
 # which is exactly what the pins exist to prevent.
-fastapi~=0.141.1
+fastapi~=0.150.0
 uvicorn[standard]~=0.52.1
 litellm~=1.95.0
 python-dotenv~=1.2.2
