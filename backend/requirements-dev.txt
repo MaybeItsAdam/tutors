@@ -3,5 +3,5 @@
 # litellm.acompletion monkeypatched), so fastapi/litellm must be importable -
 # but everything still runs offline with no keys.
 -r requirements.txt
-pytest~=9.1.1
+pytest~=9.2.0
 httpx~=0.28
